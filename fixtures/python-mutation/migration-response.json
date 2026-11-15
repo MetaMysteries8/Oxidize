@@ -1,0 +1,3 @@
+{
+  "rust": "use pyo3::exceptions::PyValueError;\nuse pyo3::prelude::*;\nuse pyo3::types::PyList;\n\n#[pyfunction]\nfn total_and_mark(values: &Bound<'_, PyList>) -> PyResult<i64> {\n    let mut total = 0_i64;\n    for value in values.iter() {\n        total += value.extract::<i64>()?;\n    }\n    values.append(total)?;\n    if total < 0 {\n        return Err(PyValueError::new_err(\"negative total\"));\n    }\n    Ok(total)\n}\n\n#[pymodule]\nfn _oxidize_e8b0ab955339(m: &Bound<'_, PyModule>) -> PyResult<()> {\n    m.add_function(wrap_pyfunction!(total_and_mark, m)?)?;\n    Ok(())\n}\n"
+}

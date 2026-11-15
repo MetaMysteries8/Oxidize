@@ -36,10 +36,23 @@ pub struct Benchmark {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Evidence {
+    /// Legacy checkpoint evidence remains readable but cannot prove mutation compatibility.
+    #[serde(default = "legacy_observation_schema_version")]
+    pub observation_schema_version: u32,
     pub observations: Vec<Value>,
     pub import_stdout: String,
     pub import_stderr: String,
     pub benchmark: Benchmark,
+}
+fn legacy_observation_schema_version() -> u32 {
+    1
+}
+#[derive(Deserialize)]
+struct Observations {
+    observation_schema_version: u32,
+    observations: Vec<Value>,
+    import_stdout: String,
+    import_stderr: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Attempt {
@@ -334,6 +347,33 @@ impl Session {
         self.save()?;
         Ok(out)
     }
+    fn validation_copy(&self, source: &Path) -> Result<tempfile::TempDir> {
+        let parent = self.directory.join("validation");
+        fs::create_dir_all(&parent)?;
+        let temporary = tempfile::Builder::new().prefix("run-").tempdir_in(parent)?;
+        snapshot(source, &temporary.path().join("project"))?;
+        Ok(temporary)
+    }
+    fn test_output(&self, source: &Path, trust: bool) -> Result<Output> {
+        let temporary = self.validation_copy(source)?;
+        Runner {
+            config: &self.state.config.execution,
+            trust_code: trust,
+        }
+        .run_with_env(
+            &temporary.path().join("project"),
+            &self.state.config.verification.test_command,
+            &[("PYO3_PYTHON", &self.state.config.python)],
+        )
+    }
+    fn check_tests(&mut self, id: usize, source: &Path, name: &str, trust: bool) -> Result<()> {
+        let output = self.test_output(source, trust)?;
+        self.state.attempts[id - 1]
+            .checks
+            .push((name.into(), output.clone()));
+        self.save()?;
+        require_tests(&output)
+    }
     fn execute_inner(
         &mut self,
         id: usize,
@@ -376,14 +416,7 @@ impl Session {
         self.set_phase(id, Phase::Prepared)?;
 
         // Tests and observations happen before asking a provider for implementation.
-        let baseline_test = self.check(
-            id,
-            &base,
-            "baseline tests",
-            &config.verification.test_command,
-            trust,
-        )?;
-        require_tests(&baseline_test)?;
+        self.check_tests(id, &base, "baseline tests", trust)?;
         let baseline = self.evidence(&base, &component, &cases, trust)?;
         self.state.attempts[id - 1].baseline = Some(baseline.clone());
         self.save()?;
@@ -528,23 +561,15 @@ impl Session {
         .context("install compiled Python extension")?;
         integrate(&project, &component, &module)?;
         self.set_phase(id, Phase::Verifying)?;
-        let tests = self.check(
-            id,
-            &project,
-            "integrated tests",
-            &config.verification.test_command,
-            trust,
-        )?;
-        require_tests(&tests)?;
+        self.check_tests(id, &project, "integrated tests", trust)?;
         let candidate = self.evidence(&project, &component, &cases, trust)?;
         let speedup = baseline.benchmark.median_ns / candidate.benchmark.median_ns;
         self.state.attempts[id - 1].candidate = Some(candidate.clone());
         self.state.attempts[id - 1].speedup = Some(speedup);
         self.save()?;
-        ensure!(
-            equivalent(&baseline, &candidate),
-            "differential mismatch: return values, types, errors, or stdout/stderr differ"
-        );
+        if let Some(reason) = differential_mismatch(&baseline, &candidate) {
+            bail!("differential mismatch: {reason}");
+        }
         ensure!(
             speedup.is_finite() && speedup >= config.performance.minimum_speedup,
             "measured speedup {speedup:.3}x is below required {:.3}x",
@@ -566,7 +591,15 @@ impl Session {
         }
         Ok(())
     }
-    fn evidence(&self, root: &Path, c: &Component, cases: &Value, trust: bool) -> Result<Evidence> {
+    fn harness<T: serde::de::DeserializeOwned>(
+        &self,
+        root: &Path,
+        c: &Component,
+        cases: &Value,
+        mode: &str,
+        trust: bool,
+    ) -> Result<T> {
+        let temporary = self.validation_copy(root)?;
         let module = c
             .path
             .strip_suffix(".py")
@@ -576,6 +609,7 @@ impl Session {
             self.state.config.python.clone(),
             "-c".into(),
             include_str!("harness.py").into(),
+            mode.into(),
             module,
             c.name.clone(),
             serde_json::to_string(cases)?,
@@ -585,10 +619,42 @@ impl Session {
             config: &self.state.config.execution,
             trust_code: trust,
         }
-        .run(root, &argv)?;
-        output.require_success("differential/benchmark workload")?;
-        let evidence: Evidence =
-            serde_json::from_str(&output.stdout).context("decode behavior/benchmark evidence")?;
+        .run(&temporary.path().join("project"), &argv)?;
+        output.require_success(&format!("{mode} workload"))?;
+        serde_json::from_str(&output.stdout).context("decode workload evidence")
+    }
+    fn evidence(&self, root: &Path, c: &Component, cases: &Value, trust: bool) -> Result<Evidence> {
+        let observed: Observations = self.harness(root, c, cases, "observe", trust)?;
+        let cases = cases
+            .as_array()
+            .context("behavior cases must be an array")?;
+        ensure!(
+            observed.observation_schema_version == 2 && observed.observations.len() == cases.len(),
+            "invalid behavior observation schema or case count"
+        );
+        ensure!(
+            observed.observations.iter().all(has_argument_evidence),
+            "behavior observations omitted argument mutation evidence"
+        );
+        let successful: Vec<_> = cases
+            .iter()
+            .zip(&observed.observations)
+            .filter(|(_, observation)| observation.get("return").is_some())
+            .map(|(case, _)| case.clone())
+            .collect();
+        ensure!(
+            !successful.is_empty(),
+            "at least one successful workload is required for benchmarking"
+        );
+        // A second process and fresh copy prevent tests/observations from seeding timing state.
+        let benchmark = self.harness(root, c, &Value::Array(successful), "benchmark", trust)?;
+        let evidence = Evidence {
+            observation_schema_version: observed.observation_schema_version,
+            observations: observed.observations,
+            import_stdout: observed.import_stdout,
+            import_stderr: observed.import_stderr,
+            benchmark,
+        };
         ensure!(
             evidence.benchmark.median_ns.is_finite() && evidence.benchmark.median_ns > 0.0,
             "invalid benchmark timing"
@@ -598,14 +664,7 @@ impl Session {
     pub fn verify(&self, trust: bool) -> Result<()> {
         self.assert_source_unchanged()?;
         self.assert_base_unchanged()?;
-        let out = Runner {
-            config: &self.state.config.execution,
-            trust_code: trust,
-        }
-        .run(
-            &self.current_workspace(),
-            &self.state.config.verification.test_command,
-        )?;
+        let out = self.test_output(&self.current_workspace(), trust)?;
         require_tests(&out)
     }
     pub fn benchmark(&self, component_id: &str, trust: bool) -> Result<Evidence> {
@@ -648,6 +707,17 @@ impl Session {
                         e.benchmark.mad_ns,
                         e.benchmark.samples_ns.len()
                     );
+                    let mutation = if e.observation_schema_version == 2
+                        && e.observations.iter().all(has_argument_evidence)
+                    {
+                        "captured positional/keyword argument mutations, including error paths; tests, behavior capture and timing use separate disposable copies/processes"
+                    } else {
+                        "legacy evidence: argument mutation and separate validation copies were not recorded"
+                    };
+                    report += &format!(
+                        "Observation schema {}: {mutation}.\n\n",
+                        e.observation_schema_version
+                    );
                 }
             }
             for (label, out) in &a.checks {
@@ -664,7 +734,7 @@ impl Session {
             }
             report += "\n";
         }
-        report += "## Evidence limits\n\nOnly configured tests and JSON cases were checked. Stateful behavior, external services, concurrency, floating tolerances, CPU, allocations, peak memory, and bridge-only overhead were not measured. Timing is sequential and subject to system noise. No claim of universal equivalence or full Rustification.\n";
+        report += "## Evidence limits\n\nOnly configured tests and JSON cases were checked. New schema-2 observations include supported argument mutations; legacy evidence does not. File effects, external services, object identity/aliasing, cyclic objects, concurrency, floating tolerances, CPU, allocations, peak memory, and bridge-only overhead were not measured. Timing is sequential and subject to system noise. No claim of universal equivalence or full Rustification.\n";
         let path = self.directory.join("report.md");
         fs::write(&path, report)?;
         Ok(path)
@@ -672,9 +742,45 @@ impl Session {
 }
 
 pub fn equivalent(a: &Evidence, b: &Evidence) -> bool {
-    a.observations == b.observations
-        && a.import_stdout == b.import_stdout
-        && a.import_stderr == b.import_stderr
+    differential_mismatch(a, b).is_none()
+}
+fn has_argument_evidence(observation: &Value) -> bool {
+    observation
+        .get("arguments_after")
+        .is_some_and(|a| a.get("args").is_some() && a.get("kwargs").is_some())
+}
+fn differential_mismatch(a: &Evidence, b: &Evidence) -> Option<String> {
+    if a.observation_schema_version != 2
+        || b.observation_schema_version != 2
+        || !a
+            .observations
+            .iter()
+            .chain(&b.observations)
+            .all(has_argument_evidence)
+    {
+        return Some(
+            "argument mutation evidence is unavailable; replay legacy evidence before comparison"
+                .into(),
+        );
+    }
+    if a.observations.len() != b.observations.len() {
+        return Some("behavior case counts differ".into());
+    }
+    if a.import_stdout != b.import_stdout || a.import_stderr != b.import_stderr {
+        return Some("module import stdout/stderr differ".into());
+    }
+    for (index, (original, candidate)) in a.observations.iter().zip(&b.observations).enumerate() {
+        if original.get("arguments_after") != candidate.get("arguments_after") {
+            return Some(format!("case {}: argument mutation differs", index + 1));
+        }
+        if original != candidate {
+            return Some(format!(
+                "case {}: return value/type, error, or stdout/stderr differ",
+                index + 1
+            ));
+        }
+    }
+    None
 }
 fn require_tests(out: &Output) -> Result<()> {
     out.require_success("independent tests")?;

@@ -6,18 +6,20 @@ Progressively replace application components with Rust while checking behavior a
 
 ## Development status
 
-**Published baseline: [v0.1.1 — Working Foundation](https://github.com/MetaMysteries8/Oxidize/tree/v0.1.1).** This branch is the **v0.2.0-dev preparation branch** for milestone two. No milestone-two implementation has landed yet; the working feature set remains the foundation's Python-to-Rust path, including the v0.1.1 checkpoint-lock fix. This is early development, not universal language support.
+**Published baseline: [v0.1.1 — Working Foundation](https://github.com/MetaMysteries8/Oxidize/tree/v0.1.1).** This is the **v0.2.0-dev development branch** for milestone two. The first slice adds disposable validation workspaces, argument-mutation comparisons, and separate behavior/timing processes. The full milestone is still in progress. This is early development, not universal language support.
 
 | Milestone | Status | Scope |
 | --- | --- | --- |
 | 1 — Working Foundation (`v0.1.1`) | Implemented | Rust CLI, Python/PyO3 migration, OpenAI-compatible provider, compiler repair, tests, component benchmarks, checkpoints, rollback, reports, and portable agent skill. |
-| 2 — Performance and Reliability (`v0.2.0`) | Preparation complete; implementation pending | Stronger behavioral evidence, reproducible profiling/benchmarking, recovery tests, sandbox validation, and detailed failure reports. |
+| 2 — Performance and Reliability (`v0.2.0`) | In progress — first slice implemented | Disposable validation, argument-mutation evidence, and separate behavior/timing runs. Profiling, sampling policy, broader effects, fault recovery, and sandbox validation remain planned. |
 | 3 — More Languages | Future | JavaScript/TypeScript, Go, and existing-Rust optimization adapters. |
 | 4 — Provider Expansion | Future | Additional native provider protocols and model routing. |
 | 5 — Agent Skill Expansion | Early skill delivered; more validation planned | External-agent discovery and workflow validation. |
 | 6 — Advanced Oxidization | Future | Entry-point replacement, runtime elimination, Hyperoxidize, large-repository support, and automation. |
 
 Local validation for v0.1.1: **16 standard tests and 2 real PyO3 migration tests passed**, plus formatting, Clippy, and workspace build checks. Tests use deterministic responses; no live external model was called. A working offline demo is included below. CI results are available in [GitHub Actions](https://github.com/MetaMysteries8/Oxidize/actions).
+
+Development-branch validation for the first milestone-two slice: **20 standard tests and 3 real native migration tests passed**, plus Clippy and formatting checks. This includes a compiled mutation-only mismatch that passes independent tests, is rejected by differential verification, then resumes with corrected code and rolls back with checkpoint hashes intact.
 
 **Next development target:** [Milestone 2 — Performance and Reliability](docs/MILESTONE_2.md). Its acceptance checklist is planned work; unchecked items are not implemented features. See [CHANGELOG.md](CHANGELOG.md) for version history and [the detailed roadmap](docs/ROADMAP.md) for remaining work.
 
@@ -29,6 +31,7 @@ Local validation for v0.1.1: **16 standard tests and 2 real PyO3 migration tests
 - One top-level synchronous Python function per migration, integrated through a real PyO3 0.30.1 extension. The original function definition is replaced by an import in the candidate copy; other functions and the Python entrypoint remain.
 - Cargo formatting, checking, Clippy, release compilation, bounded compiler-guided model repairs and repeated-response detection.
 - Existing tests before/after, differential JSON cases with typed results/errors/stdout/stderr, warmed workload benchmarks, raw timing samples, median and median absolute deviation, configurable minimum speedup, rejection on failure.
+- Development branch: schema-2 observations also compare mutations to positional and keyword inputs, including before exceptions. Tests, behavior capture and timing run in separate disposable copies/processes; normal test/workload writes do not change canonical checkpoints.
 - Locked sessions, atomic durable JSON checkpoints, source fingerprints, replayable resume, pointer-based rollback, retained failure evidence, Markdown/JSON reports.
 - Linux Bubblewrap runner that fails closed when unavailable; explicit `--trust-code` escape hatch for code the user authorizes running without OS isolation. Child-process time/output limits, cancellation, reduced environment, no shell interpolation.
 - Portable [agent skill](skills/oxidize/SKILL.md) with CLI-assisted and agent-native workflows, local installer, references, and agent-specific installation instructions.
@@ -151,7 +154,11 @@ PROJECT/.oxidize/
 
 `oxidize status PROJECT` shows state and the accepted workspace. `resume PROJECT` replays the latest interrupted/rejected attempt in a fresh directory, retaining the old partial directory and generated code. `--response` can supply a corrected implementation; `--allow-provider` permits further repairs. Every invocation must choose its execution trust policy again. `rollback PROJECT` restores the preceding accepted pointer without deleting source or evidence.
 
-Tests run in separate snapshots, but code can write within its own workspace. Source fingerprints detect edits; modified original/baseline/accepted source is not silently overwritten. Snapshots exclude known secrets, VCS state, build caches, virtual environments, and dependency directories, and reject symlinks and oversized files. Projects depending on those exclusions require deliberate preparation. Session config is frozen at baseline; preserve a session and start a new copy to change input/configuration.
+On this development branch, tests, behavior capture and timing each run in fresh temporary copies under `.oxidize/validation/`, cleaned up on return. The original source, canonical baseline and accepted candidate are not used as execution working directories. Test-generated setup files do not seed behavior capture, and observation state does not seed timing; include required workload inputs in the project beforehand. These copies are not an OS sandbox, and trusted code with absolute paths can still access the host. Source fingerprints detect edits; modified original/baseline/accepted source is not silently overwritten. Snapshots exclude known secrets, VCS state, build caches, virtual environments, and dependency directories, and reject symlinks and oversized files. Projects depending on those exclusions require deliberate preparation. Session config is frozen at baseline; preserve a session and start a new copy to change input/configuration.
+
+Existing v0.1 checkpoint evidence remains readable. Reports label its argument-mutation evidence as unavailable. New observations carry `observation_schema_version = 2`; old observations cannot be treated as mutation-equivalent without replay. The top-level checkpoint schema remains version 1 because this is an additive evidence field.
+
+The [mutation fixture](fixtures/python-mutation/README.md) demonstrates a compiled replacement that passes existing tests yet is rejected for missing an in-place mutation, then resumes successfully with corrected Rust code.
 
 Reports distinguish checked cases from universal equivalence and count components without inventing functionality coverage. Timing includes the actual Python/FFI call and input reconstruction; it is a component workload measurement, not total application speed. CPU, memory, allocations, external state, bridge-only overhead, concurrency, and arbitrary Python object identity are not measured. See [verification and benchmarks](docs/VERIFICATION.md).
 

@@ -6,6 +6,14 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### First implementation slice
+
+- Run independent tests, behavior observation and timing in fresh disposable copies, preserving canonical baseline and accepted source even when tests/workloads write project files.
+- Capture typed positional/keyword argument values after calls, including error paths, and reject mutation differences with the case number in the failure report.
+- Split observation and timing into separate processes; reconstruct inputs for every invocation. Test-generated setup and observation state no longer seed later stages.
+- Add observation schema 2. Legacy checkpoint evidence stays readable and is labeled incomplete for mutation comparisons; replay records fresh evidence.
+- Add deterministic process/workspace/mutation regressions and a real PyO3 fixture that rejects a mutation-only mismatch despite passing independent tests, then verifies resume and rollback. The fixture permits measured slowdowns and makes no speedup claim.
+
 ## v0.1.1 — Checkpoint lock recovery
 
 - Explicitly release a session's advisory lock when the session closes. A child process briefly retaining an inherited descriptor can no longer prevent immediate session reopening.

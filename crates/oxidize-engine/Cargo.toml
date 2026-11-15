@@ -13,5 +13,4 @@ fs2.workspace = true
 oxidize-core.workspace = true
 oxidize-analysis.workspace = true
 oxidize-providers.workspace = true
-[dev-dependencies]
 tempfile.workspace = true

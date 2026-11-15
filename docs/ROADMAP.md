@@ -19,8 +19,10 @@ The v0.1.0 foundation is the first version. The next target is [Milestone 2 — 
 
 ## Next: strengthen this vertical slice
 
+Milestone two is in progress. Its first slice adds disposable validation copies, input-mutation comparison (including exception paths), and separate observation/timing processes with fresh inputs. See [the milestone checklist](MILESTONE_2.md) for the remaining acceptance gates.
+
 1. Validate successful Bubblewrap execution on supported Linux hosts; add cgroup/process/memory/disk limits, stronger supervision and crash/fault-injection tests. Current environment blocks user namespaces, so only fail-closed behavior is validated here.
-2. Extend differential evidence to input mutation, file effects, import/initialization semantics, richer signatures, Python packages, object identity, numerical tolerances and nondeterministic outputs.
+2. Extend the delivered input-mutation evidence to file effects, import/initialization semantics, richer signatures, Python packages, object identity, numerical tolerances and nondeterministic outputs.
 3. Interleave timing samples, add confidence policies and whole-application workloads, collect CPU/peak RSS/allocations, measure bridge-only overhead and retain profiler artifacts.
 4. Repair integrated test mismatches within explicit budgets and maintain an append-only event journal, schema upgrades, and recovery from disk-full/atomic-write failure.
 5. Add automatic candidate selection/replanning/repetition, per-task token/cost budgets, task-specific model routing and user cancellation during in-flight HTTP.

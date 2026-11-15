@@ -176,7 +176,7 @@ fn run() -> Result<()> {
             let session = Session::open(&project)?;
             session.verify(trust_code)?;
             println!(
-                "Configured tests passed in {}",
+                "Configured tests passed using a disposable copy of {}",
                 session.current_workspace().display()
             );
         }
