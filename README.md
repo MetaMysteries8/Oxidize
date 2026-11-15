@@ -6,12 +6,12 @@ Progressively replace application components with Rust while checking behavior a
 
 ## Development status
 
-**Current version: v0.1.1 — Working Foundation.** The initial Python-to-Rust migration path is implemented and locally verified. This patch fixes a checkpoint-lock race discovered by GitHub CI after publishing v0.1.0. This is an early development release with the limitations below, not universal language support.
+**Published baseline: [v0.1.1 — Working Foundation](https://github.com/MetaMysteries8/Oxidize/tree/v0.1.1).** This branch is the **v0.2.0-dev preparation branch** for milestone two. No milestone-two implementation has landed yet; the working feature set remains the foundation's Python-to-Rust path, including the v0.1.1 checkpoint-lock fix. This is early development, not universal language support.
 
 | Milestone | Status | Scope |
 | --- | --- | --- |
 | 1 — Working Foundation (`v0.1.1`) | Implemented | Rust CLI, Python/PyO3 migration, OpenAI-compatible provider, compiler repair, tests, component benchmarks, checkpoints, rollback, reports, and portable agent skill. |
-| 2 — Performance and Reliability (`v0.2.0`) | Planned; preparation branch | Stronger behavioral evidence, reproducible profiling/benchmarking, recovery tests, sandbox validation, and detailed failure reports. |
+| 2 — Performance and Reliability (`v0.2.0`) | Preparation complete; implementation pending | Stronger behavioral evidence, reproducible profiling/benchmarking, recovery tests, sandbox validation, and detailed failure reports. |
 | 3 — More Languages | Future | JavaScript/TypeScript, Go, and existing-Rust optimization adapters. |
 | 4 — Provider Expansion | Future | Additional native provider protocols and model routing. |
 | 5 — Agent Skill Expansion | Early skill delivered; more validation planned | External-agent discovery and workflow validation. |

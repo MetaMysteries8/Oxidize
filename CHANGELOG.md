@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0-dev — Unreleased
+
+- Prepared `milestone-2-performance-reliability` from the v0.1.1 baseline, including its checkpoint-lock recovery fix.
+- Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
+- Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
+
 ## v0.1.1 — Checkpoint lock recovery
 
 - Explicitly release a session's advisory lock when the session closes. A child process briefly retaining an inherited descriptor can no longer prevent immediate session reopening.

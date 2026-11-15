@@ -1,6 +1,6 @@
 # Milestone 2 — Performance and Reliability
 
-**Status: planned; preparation only. Target: v0.2.0.** Baseline: v0.1.1 Working Foundation, including the checkpoint-lock recovery fix. Development branch: `milestone-2-performance-reliability`.
+**Status: preparation complete; implementation pending. Target: v0.2.0.** Baseline: v0.1.1 Working Foundation, including the checkpoint-lock recovery fix. Development branch: `milestone-2-performance-reliability`; package version: `0.2.0-dev`.
 
 The goal is to make the existing Python/PyO3 migration path more reliable and its evidence more useful before adding source languages. The foundation already has basic differential testing, component timing, compiler repair, isolated copies, rollback and reporting. This milestone strengthens those implementations rather than treating them as missing or claiming planned capabilities are complete.
 
