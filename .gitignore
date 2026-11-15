@@ -1,0 +1,10 @@
+**/target/
+/work/
+**/.oxidize/
+**/__pycache__/
+.env
+.env.*
+!.env.example
+*.so
+*.dylib
+*.pyd

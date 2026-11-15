@@ -1,0 +1,10 @@
+[package]
+name="oxidize-python-example"
+version="0.1.0"
+edition="2024"
+[lib]
+name="_oxidize_5cf14915940d"
+crate-type=["cdylib"]
+[dependencies]
+pyo3={version="=0.30.1",features=["extension-module"]}
+[workspace]

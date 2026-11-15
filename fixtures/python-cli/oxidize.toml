@@ -1,0 +1,21 @@
+python = "python3"
+max_repairs = 2
+
+[provider]
+endpoint = "http://127.0.0.1:11434/v1"
+model = "configure-your-model"
+api_key_env = "OXIDIZE_API_KEY"
+
+[verification]
+cases_file = "cases.json"
+test_command = ["python3", "-m", "unittest", "discover", "-v"]
+
+[performance]
+iterations = 7
+warmup = 2
+calls_per_sample = 3
+minimum_speedup = 1.0
+
+[execution]
+timeout_seconds = 180
+offline = true

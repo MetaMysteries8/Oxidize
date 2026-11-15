@@ -1,0 +1,20 @@
+[package]
+name = "oxidize-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+[[bin]]
+name = "oxidize"
+path = "src/main.rs"
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+ctrlc.workspace = true
+oxidize-core.workspace = true
+oxidize-analysis.workspace = true
+oxidize-engine.workspace = true
+[dev-dependencies]
+tempfile.workspace = true

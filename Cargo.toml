@@ -1,0 +1,27 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+license = "MIT"
+repository = "https://github.com/MetaMysteries8/Oxidize"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+sha2 = "0.10"
+walkdir = "2"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+fs2 = "0.4"
+ctrlc = "3"
+tempfile = "3"
+oxidize-core = { path = "crates/oxidize-core" }
+oxidize-analysis = { path = "crates/oxidize-analysis" }
+oxidize-providers = { path = "crates/oxidize-providers" }
+oxidize-engine = { path = "crates/oxidize-engine" }
