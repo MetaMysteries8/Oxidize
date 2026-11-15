@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.1 — Checkpoint lock recovery
+
+- Explicitly release a session's advisory lock when the session closes. A child process briefly retaining an inherited descriptor can no longer prevent immediate session reopening.
+- Add a deterministic regression that retains a duplicate descriptor and verifies reopening and exclusive locking. The original CI failure is fixed without retries or serializing away the race.
+- Validation: 16 standard tests and 2 native migration tests passed locally, along with formatting, Clippy and build checks. v0.1.0 remains an unchanged historical tag.
+
 ## v0.1.0 — Working Foundation
 
 First development version of Oxidize, focused on a real incremental Python-to-Rust migration.

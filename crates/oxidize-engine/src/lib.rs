@@ -73,6 +73,14 @@ pub struct Session {
     _lock: fs::File,
 }
 
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Closing our descriptor is insufficient while a forked child retains
+        // the same open-file description. Explicitly release the session lock.
+        let _ = FileExt::unlock(&self._lock);
+    }
+}
+
 impl Session {
     pub fn open(root: &Path) -> Result<Self> {
         let root = root
@@ -773,4 +781,26 @@ fn integrate(root: &Path, c: &Component, module: &str) -> Result<()> {
     replacement.push('\n');
     fs::write(path, replacement)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_session_releases_lock_even_with_an_inherited_descriptor() {
+        let project = tempfile::tempdir().unwrap();
+        Config::write_new(project.path()).unwrap();
+        let session = Session::open(project.path()).unwrap();
+        // A duplicate models the shared open-file description inherited by a child
+        // between fork and exec, when CLOEXEC has not closed it yet.
+        let inherited = session._lock.try_clone().unwrap();
+        assert!(Session::open(project.path()).is_err());
+        drop(session);
+        let reopened = Session::open(project.path()).unwrap();
+        drop(inherited);
+        assert!(Session::open(project.path()).is_err());
+        drop(reopened);
+        assert!(Session::open(project.path()).is_ok());
+    }
 }

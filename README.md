@@ -6,18 +6,18 @@ Progressively replace application components with Rust while checking behavior a
 
 ## Development status
 
-**Current version: v0.1.0 — Working Foundation.** The initial Python-to-Rust migration path is implemented and locally verified. This is an early development release with the limitations below, not universal language support.
+**Current version: v0.1.1 — Working Foundation.** The initial Python-to-Rust migration path is implemented and locally verified. This patch fixes a checkpoint-lock race discovered by GitHub CI after publishing v0.1.0. This is an early development release with the limitations below, not universal language support.
 
 | Milestone | Status | Scope |
 | --- | --- | --- |
-| 1 — Working Foundation (`v0.1.0`) | Implemented | Rust CLI, Python/PyO3 migration, OpenAI-compatible provider, compiler repair, tests, component benchmarks, checkpoints, rollback, reports, and portable agent skill. |
+| 1 — Working Foundation (`v0.1.1`) | Implemented | Rust CLI, Python/PyO3 migration, OpenAI-compatible provider, compiler repair, tests, component benchmarks, checkpoints, rollback, reports, and portable agent skill. |
 | 2 — Performance and Reliability (`v0.2.0`) | Planned; preparation branch | Stronger behavioral evidence, reproducible profiling/benchmarking, recovery tests, sandbox validation, and detailed failure reports. |
 | 3 — More Languages | Future | JavaScript/TypeScript, Go, and existing-Rust optimization adapters. |
 | 4 — Provider Expansion | Future | Additional native provider protocols and model routing. |
 | 5 — Agent Skill Expansion | Early skill delivered; more validation planned | External-agent discovery and workflow validation. |
 | 6 — Advanced Oxidization | Future | Entry-point replacement, runtime elimination, Hyperoxidize, large-repository support, and automation. |
 
-Local validation for v0.1.0: **15 standard tests and 2 real PyO3 migration tests passed**, plus formatting, Clippy, and workspace build checks. Tests use deterministic responses; no live external model was called. A working offline demo is included below. CI results are available in [GitHub Actions](https://github.com/MetaMysteries8/Oxidize/actions).
+Local validation for v0.1.1: **16 standard tests and 2 real PyO3 migration tests passed**, plus formatting, Clippy, and workspace build checks. Tests use deterministic responses; no live external model was called. A working offline demo is included below. CI results are available in [GitHub Actions](https://github.com/MetaMysteries8/Oxidize/actions).
 
 **Next development target:** [Milestone 2 — Performance and Reliability](docs/MILESTONE_2.md). Its acceptance checklist is planned work; unchecked items are not implemented features. See [CHANGELOG.md](CHANGELOG.md) for version history and [the detailed roadmap](docs/ROADMAP.md) for remaining work.
 
