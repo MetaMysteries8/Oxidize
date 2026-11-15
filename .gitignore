@@ -8,3 +8,21 @@
 *.so
 *.dylib
 *.pyd
+
+# Contributor and agent environments
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+# Keys and credentials never belong in the repo
+*.pem
+*.key
+.secrets/
