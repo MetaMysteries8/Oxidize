@@ -30,8 +30,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 
 Claim work here: `- <who> · <what> · <date started>`
 
-- Hype Agent · README optional Support Oxidize section, separately approved by
-  owner; separate local commit after the verified policy slice · 2026-11-15
+- None; policy slice and separate support documentation are ready for review.
 
 ## Next up (unclaimed)
 
@@ -78,3 +77,11 @@ language to Rust.
   including the real Bubblewrap/Python fixture. The other 3 ignored native
   PyO3 tests were not rerun for this slice. Next: independent review, then the
   next unclaimed milestone item; pushing still needs the owner's approval.
+- 2026-11-15 · Hype Agent · Policy slice committed locally as `dc7b939`.
+  Added owner-approved optional Support Oxidize section in a separate docs
+  commit, using `hype-wallet receive 0.01 USDC --mainnet` output and the plain
+  public address. It explicitly buys nothing and promises no investment or
+  return. No wallet send, external post or push performed. Ask the owner
+  before pushing either commit; Claude's review request is in the shared
+  mission log. Temporary `oxidize-awake` user service and desktop caffeine
+  were enabled at the owner's request; leave them until the owner is done.
