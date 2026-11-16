@@ -692,6 +692,26 @@ mod tests {
     }
 
     #[test]
+    fn extra_host_mounts_need_the_callers_explicit_authorization() {
+        // Repository configuration can list read_only_paths, but only the invoking CLI's
+        // --allow-host-paths (authorize_host_mounts) can grant them. Nothing in this test
+        // binary authorizes, so a sandboxed run must refuse before starting anything.
+        let config = ExecutionConfig {
+            read_only_paths: vec![PathBuf::from("/usr")],
+            ..ExecutionConfig::default()
+        };
+        let runner = Runner {
+            config: &config,
+            trust_code: false,
+        };
+        let error = runner
+            .run(Path::new("/tmp"), &["true".into()])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--allow-host-paths"), "{error}");
+    }
+
+    #[test]
     fn sandbox_exposes_the_alternatives_symlinks_the_linker_needs() {
         // On Debian/Ubuntu `cc` resolves through /etc/alternatives; see SYSTEM_READ_ONLY_PATHS.
         assert!(SYSTEM_READ_ONLY_PATHS.contains(&"/etc/alternatives"));

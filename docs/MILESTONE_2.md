@@ -36,7 +36,7 @@ Acceptance: after each injected interruption, reopening either preserves the old
 - [x] Validate a successful Bubblewrap build/test flow on a Linux host with user namespaces, including Cargo cache/lock and toolchain mount handling. Evidence: [the sandboxed native demo](VERIFICATION.md#sandboxed-native-demo), run manually on Ubuntu (CI can't host it).
 - [ ] Add process/resource supervision appropriate to the supported host, explicit unsupported-platform errors, and tests for cancellation and orphan cleanup.
 - [ ] Extend finite repair budgets to integrated-test failures where useful, retain diagnostics/usage per attempt, and stop on repeated/stalled changes.
-- [ ] Keep provider transmission and additional host filesystem access explicitly authorized; never silently disable isolation to make a test pass.
+- [x] Keep provider transmission and additional host filesystem access explicitly authorized; never silently disable isolation to make a test pass. Evidence: `migrate` without `--response` or `--allow-provider` is refused before anything is sent (CLI test); `execution.read_only_paths` is refused without the caller's `--allow-host-paths` (runner test); an unusable or unavailable sandbox is an error, never a fallback to no isolation (backend-selection tests).
 
 Acceptance: the full native demo succeeds inside the supported sandbox, the same path fails closed when unavailable, and resource/repair exhaustion leaves the previous accepted checkpoint intact. Hosts blocking user namespaces remain a documented validation blocker rather than an implicit exception.
 
