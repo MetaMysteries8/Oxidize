@@ -62,6 +62,7 @@ pub struct VerificationConfig {
     pub cases_file: String,
     /// Argument vector, never interpreted by a shell.
     pub test_command: Vec<String>,
+    pub comparison: ComparisonPolicy,
 }
 impl Default for VerificationConfig {
     fn default() -> Self {
@@ -74,7 +75,38 @@ impl Default for VerificationConfig {
                 "discover".into(),
                 "-v".into(),
             ],
+            comparison: ComparisonPolicy::default(),
         }
+    }
+}
+
+/// Opt-ins affect only returned float values and call stdout/stderr, never mutations or errors.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ComparisonPolicy {
+    pub return_float_tolerance: Option<FloatTolerance>,
+    pub normalize_output_line_endings: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FloatTolerance {
+    pub absolute: f64,
+    pub relative: f64,
+}
+
+impl ComparisonPolicy {
+    pub fn validate(&self) -> Result<()> {
+        if let Some(tolerance) = &self.return_float_tolerance {
+            ensure!(
+                tolerance.absolute.is_finite()
+                    && tolerance.absolute >= 0.0
+                    && tolerance.relative.is_finite()
+                    && tolerance.relative >= 0.0,
+                "return float tolerances must be finite and nonnegative"
+            );
+        }
+        Ok(())
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -126,6 +158,7 @@ impl Config {
         Ok(config)
     }
     pub fn validate(&self) -> Result<()> {
+        self.verification.comparison.validate()?;
         ensure!(!self.python.is_empty(), "python executable is empty");
         ensure!(
             !self.verification.test_command.is_empty(),

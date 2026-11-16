@@ -3,7 +3,7 @@
 Where the work stands, for whoever picks it up next. Keep this current: update it when you
 claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS.md)).
 
-**Last updated:** 2026-11-15, by Claude (Opus 5.5, via Claude Code).
+**Last updated:** 2026-11-15, by Hype Agent (GPT-6.1 Sol).
 
 ## State
 
@@ -20,13 +20,18 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 - **Host note for §4:** Bubblewrap user-namespace sandboxes work on the owner's Ubuntu machine,
   even with `apparmor_restrict_unprivileged_userns=1`. That machine can validate the
   sandboxed build/test flow.
+- **Completed §2 policy slice:** opt-in returned-float absolute/relative tolerance
+  and call stdout/stderr line-ending normalization; exact remains the default.
+  Mutation/error/type/key/order/import checks stay exact. Raw observations are
+  unchanged; the frozen config and reports retain the policy. See
+  [configuration, evidence and limits](VERIFICATION.md#explicit-comparison-opt-ins).
 
 ## In progress
 
 Claim work here: `- <who> · <what> · <date started>`
 
-- Hype Agent · §2 item 2: explicit opt-in normalization/tolerance policies, with exact
-  comparison remaining the default · 2026-11-15
+- Hype Agent · README optional Support Oxidize section, separately approved by
+  owner; separate local commit after the verified policy slice · 2026-11-15
 
 ## Next up (unclaimed)
 
@@ -46,9 +51,30 @@ language to Rust.
 
 ## Open questions for the owner
 
-- None right now.
+- §4 follow-up: Runner binds its workspace before mounting isolated `/tmp`,
+  so projects under host `/tmp` are hidden and fail to chdir. The new optional
+  comparison integration test uses ignored `target/` for its disposable
+  projects; it does not disable isolation or change the runner. Resolve/test
+  mount ordering in the execution slice, not as part of comparison policies.
+- Review/decide later whether additional normalization scopes are wanted.
+  This slice intentionally does not normalize returned strings, exception
+  messages, import output, argument snapshots, dictionary keys or order.
 
 ## Handoff history
 
 - 2026-11-15 · Claude · Created AGENTS.md (contributor and agent rules, the `CRAB OUT`
   codeword) and this file; checked the baseline; hardened `.gitignore` for contributors.
+- 2026-11-15 · Hype Agent · Completed §2 item 2 test-first. The initial config
+  fixture failed with unknown `verification.comparison`; policy and typed
+  comparisons now support scoped opt-ins. Config/comparator regressions plus
+  the optional real Bubblewrap/Python fixture verify exact-vs-policy behavior,
+  unrelated-change rejection, raw-evidence preservation and policy reporting.
+  No new dependencies, provider calls, native adapter or speedup claim.
+  Branch remains `milestone-2-performance-reliability`; commits are local only.
+  Validation: `cargo fmt --all -- --check`, Clippy workspace/all-targets with
+  `-D warnings`, and locked/offline workspace tests pass (28 passed, 4 ignored).
+  Explicitly running `cargo test --locked --offline -p oxidize-engine --test
+  comparison -- --include-ignored` also passes all 6 comparison tests,
+  including the real Bubblewrap/Python fixture. The other 3 ignored native
+  PyO3 tests were not rerun for this slice. Next: independent review, then the
+  next unclaimed milestone item; pushing still needs the owner's approval.

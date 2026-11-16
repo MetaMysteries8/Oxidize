@@ -16,7 +16,7 @@ Acceptance: deterministic sampler/policy tests cover invalid/insufficient data, 
 ## 2. Stronger behavioral evidence
 
 - [x] Compare supported argument mutation alongside current typed returns, errors, stdout and stderr.
-- [ ] Add explicit opt-in normalization/tolerance policies with exact comparison remaining the default.
+- [x] Add explicit opt-in normalization/tolerance policies with exact comparison remaining the default.
 - [ ] Add controlled file-effect fixtures and comparisons with clear scope; record external effects that remain unverified.
 - [ ] Keep existing independent tests separate from generated tests and make case provenance/coverage limits visible in JSON and Markdown.
 
@@ -51,7 +51,17 @@ Acceptance: the full native demo succeeds inside the supported sandbox, the same
 
 **Implemented:** baseline and accepted-workspace protection from ordinary test/workload writes; positional/keyword mutation capture on return and exception paths; separate behavior/timing processes and fresh inputs; observation schema 2 with readable legacy evidence. Regression tests first reproduced canonical snapshot pollution and missing argument evidence. The real `python-mutation` fixture exercises a candidate that passes existing tests but fails mutation comparison, corrected-code resume, and rollback with checkpoint hashes preserved.
 
-**Next slice:** introduce a testable sampling/policy layer, interleaved original/candidate measurements, and explicit insufficient/noisy-evidence handling. Whole-application profiling, file-effect comparison, tolerances, event history/fault injection and successful sandbox execution remain unchecked work. The completed disposable-copy slice is not a claim of stronger OS isolation.
+**Additional verified slice (§2):** explicit return-float absolute/relative
+tolerances and call-output line-ending normalization, disabled by default.
+Config/comparator/report regressions preserve exact mutations, errors, types,
+dictionary keys/order and import output, validate limits, retain raw
+observations and the frozen policy, and load old configs with exact defaults.
+The `python-comparison` fixture captures actual original/candidate Python
+observations inside Bubblewrap and proves exact rejection versus scoped
+acceptance; unrelated mutation/error changes remain rejected. This is not a
+compiled PyO3 candidate or a sandboxed Cargo build.
+
+**Next slice:** introduce a testable sampling/policy layer, interleaved original/candidate measurements, and explicit insufficient/noisy-evidence handling. Whole-application profiling, file-effect comparison, event history/fault injection and successful sandboxed Cargo execution remain unchecked work. The completed disposable-copy slice is not a claim of stronger OS isolation.
 
 ## Deferred
 

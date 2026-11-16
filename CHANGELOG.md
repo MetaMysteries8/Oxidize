@@ -14,6 +14,17 @@
 - Add observation schema 2. Legacy checkpoint evidence stays readable and is labeled incomplete for mutation comparisons; replay records fresh evidence.
 - Add deterministic process/workspace/mutation regressions and a real PyO3 fixture that rejects a mutation-only mismatch despite passing independent tests, then verifies resume and rollback. The fixture permits measured slowdowns and makes no speedup claim.
 
+### Scoped comparison policies
+
+- Keep exact comparison as the default; add explicit finite, nonnegative
+  absolute/relative tolerances for returned floats and optional call
+  stdout/stderr line-ending normalization.
+- Preserve exact mutation/error/type/key/order/import checks, raw observations,
+  and existing independent tests. Freeze the policy in session config and
+  display it in Markdown/JSON reports; older configs/checkpoints default exact.
+- Add config/comparator/report regressions and a Bubblewrap-only Python
+  observation fixture. No new dependency, native adapter or performance claim.
+
 ## v0.1.1 — Checkpoint lock recovery
 
 - Explicitly release a session's advisory lock when the session closes. A child process briefly retaining an inherited descriptor can no longer prevent immediate session reopening.

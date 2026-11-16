@@ -15,6 +15,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod comparison;
+use comparison::{differential_mismatch, has_argument_evidence};
+pub use comparison::{equivalent, equivalent_with_policy};
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
@@ -567,7 +571,9 @@ impl Session {
         self.state.attempts[id - 1].candidate = Some(candidate.clone());
         self.state.attempts[id - 1].speedup = Some(speedup);
         self.save()?;
-        if let Some(reason) = differential_mismatch(&baseline, &candidate) {
+        if let Some(reason) =
+            differential_mismatch(&baseline, &candidate, &config.verification.comparison)
+        {
             bail!("differential mismatch: {reason}");
         }
         ensure!(
@@ -688,6 +694,10 @@ impl Session {
             self.state.source_fingerprint,
             self.current_workspace().display()
         );
+        report += &format!(
+            "## Comparison policy\n\nFrozen session policy (omitted options default to exact comparison):\n\n```json\n{}\n```\n\nTolerances apply only to returned floats, recursively through supported containers; line-ending normalization applies only to call stdout/stderr. Argument mutations, errors, return types, dictionary keys/order, import output and other observation fields remain exact. Raw observations are retained unchanged.\n\n",
+            serde_json::to_string_pretty(&self.state.config.verification.comparison)?
+        );
         for a in &self.state.attempts {
             report += &format!(
                 "## Attempt {}: `{}`\n\nStatus: {:?}\n\nCompiler repairs: {}\n\n",
@@ -734,54 +744,13 @@ impl Session {
             }
             report += "\n";
         }
-        report += "## Evidence limits\n\nOnly configured tests and JSON cases were checked. New schema-2 observations include supported argument mutations; legacy evidence does not. File effects, external services, object identity/aliasing, cyclic objects, concurrency, floating tolerances, CPU, allocations, peak memory, and bridge-only overhead were not measured. Timing is sequential and subject to system noise. No claim of universal equivalence or full Rustification.\n";
+        report += "## Evidence limits\n\nOnly configured tests and JSON cases were checked, under the comparison policy above. Opt-in tolerances/normalization weaken equality within their stated scope; they are not proof of exact equivalence. New schema-2 observations include supported argument mutations; legacy evidence does not. File effects, external services, object identity/aliasing, cyclic objects, concurrency, non-finite floats, CPU, allocations, peak memory, and bridge-only overhead were not measured. Timing is sequential and subject to system noise. No claim of universal equivalence or full Rustification.\n";
         let path = self.directory.join("report.md");
         fs::write(&path, report)?;
         Ok(path)
     }
 }
 
-pub fn equivalent(a: &Evidence, b: &Evidence) -> bool {
-    differential_mismatch(a, b).is_none()
-}
-fn has_argument_evidence(observation: &Value) -> bool {
-    observation
-        .get("arguments_after")
-        .is_some_and(|a| a.get("args").is_some() && a.get("kwargs").is_some())
-}
-fn differential_mismatch(a: &Evidence, b: &Evidence) -> Option<String> {
-    if a.observation_schema_version != 2
-        || b.observation_schema_version != 2
-        || !a
-            .observations
-            .iter()
-            .chain(&b.observations)
-            .all(has_argument_evidence)
-    {
-        return Some(
-            "argument mutation evidence is unavailable; replay legacy evidence before comparison"
-                .into(),
-        );
-    }
-    if a.observations.len() != b.observations.len() {
-        return Some("behavior case counts differ".into());
-    }
-    if a.import_stdout != b.import_stdout || a.import_stderr != b.import_stderr {
-        return Some("module import stdout/stderr differ".into());
-    }
-    for (index, (original, candidate)) in a.observations.iter().zip(&b.observations).enumerate() {
-        if original.get("arguments_after") != candidate.get("arguments_after") {
-            return Some(format!("case {}: argument mutation differs", index + 1));
-        }
-        if original != candidate {
-            return Some(format!(
-                "case {}: return value/type, error, or stdout/stderr differ",
-                index + 1
-            ));
-        }
-    }
-    None
-}
 fn require_tests(out: &Output) -> Result<()> {
     out.require_success("independent tests")?;
     let combined = format!("{}{}", out.stdout, out.stderr);
