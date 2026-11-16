@@ -8,9 +8,9 @@ Opt-in native tests actually compile and load the PyO3 implementation. They exer
 
 Measurement uses Python `perf_counter_ns` in independent original/candidate processes, two warm-up batches and seven measured batches by default. Behavior capture and timing run in separate processes and fresh disposable copies, so test/setup and observation state do not seed timing. It measures successful supplied cases through the Python callable; errors are checked separately. Each batch reconstructs case arguments to avoid mutation leaking between repetitions. The report contains raw samples, median and median absolute deviation. Input reconstruction, Python call dispatch and FFI are included in both sides' timings. Sequential ordering and machine noise can bias results. These timings do not measure startup, whole-app throughput, CPU use, allocations or memory; no such metrics are fabricated.
 
-Exact comparisons are the default and preserve scalar types, list/tuple distinctions, dict order, exceptions, stdout/stderr, and post-call positional/keyword argument values, including mutations before exceptions. Non-finite floats and arbitrary objects fail instead of being silently normalized. External file/network effects, identity/aliasing/cyclic objects, timing/concurrency, import races, reflection/docstrings/annotations, Python object identity and unsupported calls remain unverified. Passing tests and cases is bounded evidence, not a mathematical proof of equivalence.
+Exact comparisons are the default and preserve scalar types, list/tuple distinctions, dict order, exceptions, stdout/stderr, and post-call positional/keyword argument values, including mutations before exceptions. Non-finite floats and arbitrary objects fail instead of being silently normalized. Unconfigured file/network effects, identity/aliasing/cyclic objects, timing/concurrency, import races, reflection/docstrings/annotations, Python object identity and unsupported calls remain unverified. Passing tests and cases is bounded evidence, not a mathematical proof of equivalence.
 
-Development regressions cover test/workload writes on success and failure, repeated verification without snapshot contamination, fresh inputs for every invocation, distinct observation/timing PIDs and workspaces, temporary-copy cleanup, and readable legacy observation evidence. Observation schema 2 adds typed argument snapshots; legacy schema 1 is reported as missing that evidence and cannot be compared as mutation-equivalent without replay. The top-level checkpoint schema remains 1 for this additive change. File writes in validation copies are discarded, not compared; path-dependent workloads and test-generated setup require explicit preparation. Scoped copies do not sandbox trusted code accessing absolute host paths.
+Development regressions cover test/workload writes on success and failure, repeated verification without snapshot contamination, fresh inputs for every invocation, distinct observation/timing PIDs and workspaces, temporary-copy cleanup, and readable legacy observation evidence. Observation schema 2 adds typed argument snapshots; legacy schema 1 is reported as missing that evidence and cannot be compared as mutation-equivalent without replay. The top-level checkpoint schema remains 1 for additive fields. Unconfigured file writes in validation copies are discarded, not compared; path-dependent workloads and test-generated setup require explicit preparation. Scoped copies do not sandbox trusted code accessing absolute host paths.
 
 ## Explicit comparison opt-ins
 
@@ -62,3 +62,51 @@ Python observations on hosts with working Bubblewrap. This is not a new native
 adapter, a proof of universal equivalence, a speedup result, or a complete
 sandboxed Cargo demonstration. Large tolerances intentionally weaken the
 return-value check; choose them according to your workload's contract.
+
+## Controlled file-effect opt-in
+
+By default no file effects are observed. To declare a bounded file contract,
+configure paths **before** starting a session:
+
+```toml
+[verification]
+file_effect_paths = ["output/result.bin", "status.txt"]
+```
+
+Paths must be unique, project-relative and stay inside the project; at most 32
+paths, each at most 1024 bytes. Reserved session/VCS/credential-like paths are
+rejected. At capture time each path component is checked for symlinks; existing
+leaves must be regular files of at most 1 MiB. Missing files or parents are
+recorded as `null`, not as empty files. Existing files produce
+`{"size_bytes": N, "sha256": "..."}`. Raw file bytes are never stored in reports.
+Unsupported types, oversized files or capture failures fail evidence collection,
+not silently skip the affected path.
+
+Each behavior case records before/after states, even when the function raises.
+File snapshots are compared exactly, independent of float/output normalization.
+Creation, deletion, changed bytes (including binary content), and changed initial
+state are visible. Cases run sequentially in one fresh observation copy/process,
+so a case can inherit a previous case's files; both states are recorded.
+Independent tests and timing still use separate copies, and timing includes no
+snapshot/hash work.
+
+Config, observations and JSON evidence retain `file_effect_paths`; each
+observation's `file_effects` maps those paths to `before`/`after`. Older configs
+default to no paths, and older evidence defaults to an empty captured-path list.
+Different scopes or missing/malformed snapshots cannot establish file-effect
+equivalence. This additive schema-2 field does not upgrade historical evidence.
+Markdown reports distinguish requested scope from actually captured/legacy
+evidence.
+
+**Not observed:** unlisted paths, directory trees, modes/permissions/timestamps,
+inode identity/hard links, transient writes undone between boundaries,
+import/test/timing effects, external services or concurrent writers. Snapshot
+hashing is not a hostile-code monitor or a race-proof filesystem boundary.
+Prefer the sandbox; this does not strengthen `--trust-code`.
+
+Evidence: [the controlled-file fixture](../fixtures/python-file-effects/README.md)
+passes the independent return/error tests for original and altered Python code,
+then rejects the changed byte evidence under Bubblewrap. Config, malformed/legacy
+evidence and reporting also have deterministic tests. A compiled native
+file-effect acceptance/rejection demonstration remains pending; this slice does
+not complete the full milestone gate or claim a performance improvement.

@@ -25,6 +25,18 @@
 - Add config/comparator/report regressions and a Bubblewrap-only Python
   observation fixture. No new dependency, native adapter or performance claim.
 
+### Controlled file-effect observation slice
+
+- Opt into bounded project-relative regular-file snapshots via
+  `verification.file_effect_paths`; default remains no file-effect claim.
+- Capture exact before/after presence, byte length and SHA256 including error
+  paths. Reject differing scopes, missing evidence and unsupported file types.
+- Keep raw contents out of evidence, skip hashing in timing processes, retain
+  explicit path metadata and scope/legacy limitations in reports.
+- Add deterministic config/comparator/report tests and sandboxed Python
+  fixtures. A native file-effect gate demonstration remains pending; this is
+  not a claim of filesystem-wide tracing or a completed milestone.
+
 ## v0.1.1 — Checkpoint lock recovery
 
 - Explicitly release a session's advisory lock when the session closes. A child process briefly retaining an inherited descriptor can no longer prevent immediate session reopening.

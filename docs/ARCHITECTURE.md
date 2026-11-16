@@ -22,7 +22,7 @@
 
 An interrupted attempt is replayed from its base into a fresh copy. Old partial files are archived. This deliberately favors repeatability over attempting to continue a half-written build. Source revision metadata is supplementary: SHA256 captures noncommitted source too. Rollback moves a pointer rather than running a destructive Git operation.
 
-Validation copies live under `.oxidize/validation/` and are removed by a scoped temporary-directory guard on success/error. Behavior and timing use the same embedded harness with distinct modes, invocation processes and copies. Observation results are serialized before timing begins; only successful original cases are reconstructed for timing. File effects are isolated but not compared. Trusted code can still access host paths outside a copy.
+Validation copies live under `.oxidize/validation/` and are removed by a scoped temporary-directory guard on success/error. Behavior and timing use the same embedded harness with distinct modes, invocation processes and copies. Observation results are serialized before timing begins; only successful original cases are reconstructed for timing. Unconfigured file effects are isolated but not compared. Trusted code can still access host paths outside a copy.
 
 New evidence has `observation_schema_version = 2`. A missing field defaults to legacy version 1 for old checkpoints/reports, but the comparator refuses to claim argument-mutation equivalence for legacy/missing evidence. Resume replays saved code and captures new evidence. The top-level state schema remains 1; this additive field does not upgrade or rewrite historical observations into stronger evidence.
 
@@ -31,6 +31,15 @@ frozen session configuration. Migration compares raw evidence through this
 policy without rewriting the observations. JSON reports preserve it, and the
 Markdown report states its scope explicitly. Legacy configs/checkpoints omit
 it and receive the exact default, not an inferred tolerance.
+
+`verification.file_effect_paths` optionally declares up to 32 project-relative
+regular files. Only behavior capture records bounded before/after presence,
+length and SHA256 (also on exceptions), never raw contents. Each Evidence
+records the actual path list, and the comparison gate requires equal scopes
+and complete snapshots before exact file comparison. Missing legacy metadata
+means no captured file contract, not file equivalence. Timing never performs
+these snapshots. Unlisted/transient/import-time effects and file metadata are
+outside this scope; see the verification limits.
 
 ## Extension points
 

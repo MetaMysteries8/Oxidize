@@ -1,15 +1,50 @@
 """Run in separate original/candidate processes; stdout is one machine-readable evidence record."""
 import contextlib
+import hashlib
 import importlib
 import io
 import json
 import math
 import statistics
+import stat
 import sys
 import time
+from pathlib import Path
 
-mode, module_name, name, cases_text, performance_text = sys.argv[1:]
+mode, module_name, name, cases_text, performance_text, file_paths_text = sys.argv[1:]
 cases, policy = json.loads(cases_text), json.loads(performance_text)
+file_paths = json.loads(file_paths_text)
+
+def capture_file_effects():
+    """Only explicit regular paths, bounded bytes, no directory trees or symlinks."""
+    captured = {}
+    for relative in file_paths:
+        path = Path.cwd()
+        parts = Path(relative).parts
+        for index, part in enumerate(parts):
+            path = path / part
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                captured[relative] = None
+                break
+            if stat.S_ISLNK(info.st_mode):
+                raise RuntimeError('file-effect paths must not contain symlinks')
+            if index < len(parts) - 1:
+                if not stat.S_ISDIR(info.st_mode):
+                    raise RuntimeError('file-effect parent must be a directory')
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                raise RuntimeError('file-effect path must be a regular file')
+            if info.st_size > 1048576:
+                raise RuntimeError('file-effect file exceeds 1 MiB')
+            with path.open('rb') as stream:
+                data = stream.read(1048577)
+            if len(data) > 1048576:
+                raise RuntimeError('file-effect file exceeds 1 MiB')
+            captured[relative] = {'size_bytes': len(data),
+                                  'sha256': hashlib.sha256(data).hexdigest()}
+    return captured
 
 def encode(value):
     """Preserve types, dict insertion order, and tuple/list distinctions."""
@@ -34,6 +69,7 @@ if mode == 'observe':
         # Each observation has fresh JSON inputs; mutations on an error path count too.
         case = json.loads(json.dumps(template))
         args, kwargs = case['args'], case.get('kwargs', {})
+        before_files = capture_file_effects()
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
@@ -43,10 +79,17 @@ if mode == 'observe':
             else:
                 observed = {'return': encode(result)}
         observed.update(arguments_after={'args': encode(args), 'kwargs': encode(kwargs)},
-                        stdout=out.getvalue(), stderr=err.getvalue())
+                         stdout=out.getvalue(), stderr=err.getvalue())
+        if file_paths:
+            after_files = capture_file_effects()
+            observed['file_effects'] = {
+                path: {'before': before_files[path], 'after': after_files[path]}
+                for path in file_paths
+            }
         observations.append(observed)
     payload = {'observation_schema_version': 2, 'observations': observations,
-               'import_stdout': import_out.getvalue(), 'import_stderr': import_err.getvalue()}
+               'import_stdout': import_out.getvalue(), 'import_stderr': import_err.getvalue(),
+               'file_effect_paths': file_paths}
 elif mode == 'benchmark':
     # The engine supplies only cases that returned successfully during observation.
     # Timing runs in a different process and fresh workspace from correctness capture.

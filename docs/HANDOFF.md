@@ -3,7 +3,7 @@
 Where the work stands, for whoever picks it up next. Keep this current: update it when you
 claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS.md)).
 
-**Last updated:** 2026-11-15, by Hype Agent (GPT-6.1 Sol).
+**Last updated:** 2026-11-15, by Ferriscope (GPT-6.1 Sol).
 
 ## State
 
@@ -25,19 +25,25 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
   Mutation/error/type/key/order/import checks stay exact. Raw observations are
   unchanged; the frozen config and reports retain the policy. See
   [configuration, evidence and limits](VERIFICATION.md#explicit-comparison-opt-ins).
+- **Controlled file-effect observation slice:** opt-in bounded regular-file
+  snapshots and exact comparisons are implemented. Config/comparator/report
+  tests and sandboxed Python observation fixtures pass. The full §2 checklist
+  item remains open until native acceptance/rejection evidence exists.
 
 ## In progress
 
 Claim work here: `- <who> · <what> · <date started>`
 
-- None; policy slice and separate support documentation are ready for review.
+- None. Scoped observation/comparison slice is ready for review.
 
 ## Next up (unclaimed)
 
 In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
 
-1. §2: controlled file-effect fixtures and comparisons; record which external effects remain
-   unverified.
+1. §2: finish the controlled file-effect gate with a compiled native candidate
+   that passes independent tests but changes a configured file effect; demonstrate
+   rejection and successful corrected-code replay inside the sandbox. Capture/
+   comparison/reporting are already implemented; don't duplicate them.
 2. §2: keep existing independent tests separate from generated ones; show case provenance and
    coverage limits in JSON and Markdown.
 3. §4: validate a successful Bubblewrap build/test flow (the owner's machine can host it).
@@ -58,6 +64,10 @@ language to Rust.
 - Review/decide later whether additional normalization scopes are wanted.
   This slice intentionally does not normalize returned strings, exception
   messages, import output, argument snapshots, dictionary keys or order.
+- The new file-effect slice does not run a compiled PyO3 candidate. Keep the
+  full §2 box open until that evidence is available, preferably alongside §4's
+  sandboxed native build/test flow. Don't silently add `--trust-code` to get
+  the demonstration through.
 
 ## Handoff history
 
@@ -92,3 +102,20 @@ language to Rust.
   Ordinary fast-forward push succeeded: policies `3dc4157`, support `f2d3a5f`.
   No published history was rewritten and no Git/account settings were changed.
   Added owner's requested credit line using the codename Ferriscope.
+- 2026-11-15 · Ferriscope · Added scoped file-effect observation/comparison
+  test-first (initial config fixture failed on unknown `file_effect_paths`).
+  Defaults remain off; explicit paths record before/after presence, size and
+  SHA256 including exception paths. Snapshots are exact even with normalization
+  enabled, and raw contents are not stored. Missing/legacy snapshots fail closed
+  for configured scopes. Paths/types/size limits and remaining external-effect
+  limitations are documented.
+  Validation: fmt and workspace/all-target Clippy `-D warnings` pass;
+  locked/offline workspace tests: 34 passed, 6 ignored. Explicit comparison
+  suite: 6 passed; explicit file-effect suite: 5 passed (both with
+  `--include-ignored`, including actual Bubblewrap/Python runs).
+  The Python candidate passes the independent return/error tests but is
+  rejected for changed bytes. No native file-effect acceptance claim, new
+  dependencies, live provider call, or `--trust-code` fallback. Next steps
+  are listed above. Credit line is in separate local commit `287ab42`.
+  This new slice is local for review; the earlier policy/support commits are
+  already pushed. Ask owner before pushing new commits.

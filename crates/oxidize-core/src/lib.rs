@@ -63,6 +63,8 @@ pub struct VerificationConfig {
     /// Argument vector, never interpreted by a shell.
     pub test_command: Vec<String>,
     pub comparison: ComparisonPolicy,
+    /// Explicit regular files observed before/after each behavior case, relative to the project.
+    pub file_effect_paths: Vec<String>,
 }
 impl Default for VerificationConfig {
     fn default() -> Self {
@@ -76,6 +78,7 @@ impl Default for VerificationConfig {
                 "-v".into(),
             ],
             comparison: ComparisonPolicy::default(),
+            file_effect_paths: vec![],
         }
     }
 }
@@ -159,6 +162,30 @@ impl Config {
     }
     pub fn validate(&self) -> Result<()> {
         self.verification.comparison.validate()?;
+        ensure!(
+            self.verification.file_effect_paths.len() <= 32,
+            "at most 32 file-effect paths may be observed"
+        );
+        for (index, value) in self.verification.file_effect_paths.iter().enumerate() {
+            let path = safe_relative(value)?;
+            ensure!(value.len() <= 1024, "file-effect path exceeds 1024 bytes");
+            ensure!(
+                !self.verification.file_effect_paths[..index].contains(value),
+                "duplicate file-effect path: {value}"
+            );
+            for part in path.components() {
+                let name = part.as_os_str().to_string_lossy();
+                ensure!(
+                    !matches!(
+                        name.as_ref(),
+                        ".git" | ".oxidize" | ".ssh" | ".aws" | ".cargo" | ".rustup"
+                    ) && !name.starts_with(".env")
+                        && !name.ends_with(".pem")
+                        && !name.ends_with(".key"),
+                    "reserved or credential-like file-effect path"
+                );
+            }
+        }
         ensure!(!self.python.is_empty(), "python executable is empty");
         ensure!(
             !self.verification.test_command.is_empty(),

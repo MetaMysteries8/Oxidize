@@ -16,7 +16,7 @@ use std::{
 };
 
 mod comparison;
-use comparison::{differential_mismatch, has_argument_evidence};
+use comparison::{differential_mismatch, has_argument_evidence, has_file_effect_evidence};
 pub use comparison::{equivalent, equivalent_with_policy};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +43,9 @@ pub struct Evidence {
     /// Legacy checkpoint evidence remains readable but cannot prove mutation compatibility.
     #[serde(default = "legacy_observation_schema_version")]
     pub observation_schema_version: u32,
+    /// Missing in older evidence: no file effects were captured.
+    #[serde(default)]
+    pub file_effect_paths: Vec<String>,
     pub observations: Vec<Value>,
     pub import_stdout: String,
     pub import_stderr: String,
@@ -54,6 +57,7 @@ fn legacy_observation_schema_version() -> u32 {
 #[derive(Deserialize)]
 struct Observations {
     observation_schema_version: u32,
+    file_effect_paths: Vec<String>,
     observations: Vec<Value>,
     import_stdout: String,
     import_stderr: String,
@@ -620,6 +624,7 @@ impl Session {
             c.name.clone(),
             serde_json::to_string(cases)?,
             serde_json::to_string(&self.state.config.performance)?,
+            serde_json::to_string(&self.state.config.verification.file_effect_paths)?,
         ];
         let output = Runner {
             config: &self.state.config.execution,
@@ -642,6 +647,14 @@ impl Session {
             observed.observations.iter().all(has_argument_evidence),
             "behavior observations omitted argument mutation evidence"
         );
+        ensure!(
+            observed.file_effect_paths == self.state.config.verification.file_effect_paths
+                && observed
+                    .observations
+                    .iter()
+                    .all(|o| has_file_effect_evidence(o, &observed.file_effect_paths)),
+            "behavior observations omitted or invalidated configured file-effect evidence"
+        );
         let successful: Vec<_> = cases
             .iter()
             .zip(&observed.observations)
@@ -656,6 +669,7 @@ impl Session {
         let benchmark = self.harness(root, c, &Value::Array(successful), "benchmark", trust)?;
         let evidence = Evidence {
             observation_schema_version: observed.observation_schema_version,
+            file_effect_paths: observed.file_effect_paths,
             observations: observed.observations,
             import_stdout: observed.import_stdout,
             import_stderr: observed.import_stderr,
@@ -698,6 +712,10 @@ impl Session {
             "## Comparison policy\n\nFrozen session policy (omitted options default to exact comparison):\n\n```json\n{}\n```\n\nTolerances apply only to returned floats, recursively through supported containers; line-ending normalization applies only to call stdout/stderr. Argument mutations, errors, return types, dictionary keys/order, import output and other observation fields remain exact. Raw observations are retained unchanged.\n\n",
             serde_json::to_string_pretty(&self.state.config.verification.comparison)?
         );
+        report += &format!(
+            "## File-effect scope\n\nRequested project-relative regular files: `{}`. Each configured file's presence, byte length and SHA256 are captured before/after each behavior call, including exceptions, and compared exactly. No file paths configured means no file-effect claim. Limits: 32 paths, 1 MiB per file. Raw contents are not retained. Tests/timing and import-time effects, unlisted paths, transient writes restored between snapshots, metadata/permissions, directory trees and external effects remain unverified.\n\n",
+            serde_json::to_string(&self.state.config.verification.file_effect_paths)?
+        );
         for a in &self.state.attempts {
             report += &format!(
                 "## Attempt {}: `{}`\n\nStatus: {:?}\n\nCompiler repairs: {}\n\n",
@@ -728,6 +746,21 @@ impl Session {
                         "Observation schema {}: {mutation}.\n\n",
                         e.observation_schema_version
                     );
+                    let file_evidence = if e.file_effect_paths.is_empty() {
+                        "not captured (default/legacy evidence)".into()
+                    } else if e
+                        .observations
+                        .iter()
+                        .all(|o| has_file_effect_evidence(o, &e.file_effect_paths))
+                    {
+                        format!(
+                            "captured exactly for {}",
+                            serde_json::to_string(&e.file_effect_paths)?
+                        )
+                    } else {
+                        "incomplete; cannot establish configured file-effect equivalence".into()
+                    };
+                    report += &format!("File-effect evidence: {file_evidence}.\n\n");
                 }
             }
             for (label, out) in &a.checks {
@@ -744,7 +777,7 @@ impl Session {
             }
             report += "\n";
         }
-        report += "## Evidence limits\n\nOnly configured tests and JSON cases were checked, under the comparison policy above. Opt-in tolerances/normalization weaken equality within their stated scope; they are not proof of exact equivalence. New schema-2 observations include supported argument mutations; legacy evidence does not. File effects, external services, object identity/aliasing, cyclic objects, concurrency, non-finite floats, CPU, allocations, peak memory, and bridge-only overhead were not measured. Timing is sequential and subject to system noise. No claim of universal equivalence or full Rustification.\n";
+        report += "## Evidence limits\n\nOnly configured tests and JSON cases were checked, under the comparison policy and file-effect scope above. Opt-in tolerances/normalization weaken equality within their stated scope; they are not proof of exact equivalence. New schema-2 observations include supported argument mutations; legacy evidence does not. Unconfigured/transient/import-time file effects, external services, object identity/aliasing, cyclic objects, concurrency, non-finite floats, CPU, allocations, peak memory, and bridge-only overhead were not measured. Timing is sequential and subject to system noise. No claim of universal equivalence or full Rustification.\n";
         let path = self.directory.join("report.md");
         fs::write(&path, report)?;
         Ok(path)

@@ -63,6 +63,15 @@ compiled PyO3 candidate or a sandboxed Cargo build.
 
 **Next slice:** introduce a testable sampling/policy layer, interleaved original/candidate measurements, and explicit insufficient/noisy-evidence handling. Whole-application profiling, file-effect comparison, event history/fault injection and successful sandboxed Cargo execution remain unchecked work. The completed disposable-copy slice is not a claim of stronger OS isolation.
 
+**Partial §2 file-effect slice:** explicitly configured regular files now have
+bounded before/after presence, size and SHA256 evidence, compared exactly and
+reported with their limits. Sandboxed Python fixtures prove creation/change/
+deletion/error-path capture and reject a same-length byte mismatch despite
+passing independent tests; malformed/legacy evidence fails closed. The full
+file-effect checkbox above remains open pending a compiled native-candidate
+acceptance/rejection demonstration. This does not observe unlisted/transient/
+import-time writes, metadata or external systems.
+
 ## Deferred
 
 JavaScript/TypeScript, Go, Rust optimization, additional native provider protocols, automatic whole-repository migration, runtime elimination, Hyperoxidize, GitHub automation and a terminal dashboard remain outside milestone two. Preserve the existing architecture and split modules only when the implementation needs it.

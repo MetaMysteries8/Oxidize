@@ -17,6 +17,45 @@ pub(crate) fn has_argument_evidence(observation: &Value) -> bool {
         .is_some_and(|a| a.get("args").is_some() && a.get("kwargs").is_some())
 }
 
+pub(crate) fn has_file_effect_evidence(observation: &Value, paths: &[String]) -> bool {
+    if paths.is_empty() {
+        return true;
+    }
+    let Some(effects) = observation.get("file_effects").and_then(Value::as_object) else {
+        return false;
+    };
+    effects.len() == paths.len()
+        && paths.iter().all(|path| {
+            effects
+                .get(path)
+                .and_then(Value::as_object)
+                .is_some_and(|states| {
+                    states.len() == 2
+                        && ["before", "after"]
+                            .iter()
+                            .all(|key| states.get(*key).is_some_and(valid_file_state))
+                })
+        })
+}
+
+fn valid_file_state(state: &Value) -> bool {
+    if state.is_null() {
+        return true;
+    }
+    let Some(file) = state.as_object() else {
+        return false;
+    };
+    file.len() == 2
+        && file
+            .get("size_bytes")
+            .and_then(Value::as_u64)
+            .is_some_and(|size| size <= 1_048_576)
+        && file
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_some_and(|hash| hash.len() == 64 && hash.bytes().all(|c| c.is_ascii_hexdigit()))
+}
+
 pub(crate) fn differential_mismatch(
     a: &Evidence,
     b: &Evidence,
@@ -41,12 +80,26 @@ pub(crate) fn differential_mismatch(
     if a.observations.len() != b.observations.len() {
         return Some("behavior case counts differ".into());
     }
+    if a.file_effect_paths != b.file_effect_paths
+        || a.observations
+            .iter()
+            .chain(&b.observations)
+            .any(|o| !has_file_effect_evidence(o, &a.file_effect_paths))
+    {
+        return Some("configured file-effect evidence is unavailable or scopes differ".into());
+    }
     if a.import_stdout != b.import_stdout || a.import_stderr != b.import_stderr {
         return Some("module import stdout/stderr differ".into());
     }
     for (index, (original, candidate)) in a.observations.iter().zip(&b.observations).enumerate() {
         if original.get("arguments_after") != candidate.get("arguments_after") {
             return Some(format!("case {}: argument mutation differs", index + 1));
+        }
+        if original.get("file_effects") != candidate.get("file_effects") {
+            return Some(format!(
+                "case {}: configured file effects differ",
+                index + 1
+            ));
         }
         let same =
             original
