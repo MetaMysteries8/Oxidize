@@ -18,7 +18,7 @@ Acceptance: deterministic sampler/policy tests cover invalid/insufficient data, 
 - [x] Compare supported argument mutation alongside current typed returns, errors, stdout and stderr.
 - [x] Add explicit opt-in normalization/tolerance policies with exact comparison remaining the default.
 - [ ] Add controlled file-effect fixtures and comparisons with clear scope; record external effects that remain unverified.
-- [ ] Keep existing independent tests separate from generated tests and make case provenance/coverage limits visible in JSON and Markdown.
+- [x] Keep existing independent tests separate from generated tests and make case provenance/coverage limits visible in JSON and Markdown. Evidence: each attempt records `provenance` (cases file, its SHA-256, project-supplied case count, `generated_cases` (0: Oxidize generates none yet), and the independent test command) in `state.json`/`report.json`; the Markdown report states it with the coverage limit (engine unit test; sandboxed demo report). When case generation is added, it must increment `generated_cases` and keep its cases separate.
 
 Acceptance: a compilable candidate that passes existing tests but changes an observed mutation, error, return type or configured file effect is rejected. Intentional tolerance/normalization is tested without masking unrelated changes.
 

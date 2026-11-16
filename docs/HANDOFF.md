@@ -137,3 +137,4 @@ language to Rust.
 - 2026-11-15 · Claude · The portability CI job passes on macOS and Windows (after the LF .gitattributes fix) and is now **blocking**. It covers the build and standard tests only; native PyO3 migration on macOS/Windows is still unvalidated.
 - 2026-11-15 · Claude · §1 "record the context with every measurement" done (ticked): interpreter from inside the run, plus OS/arch, isolation, command, policy, threshold and scope, in the evidence JSON and as a report line. Gap: the rustc version is not recorded yet.
 - 2026-11-15 · Claude · §4 "explicit authorization" ticked, with tests for provider transmission, host mounts, and no silent isolation fallback.
+- 2026-11-15 · Claude · §2 "case provenance" ticked: per-attempt provenance in JSON + a report paragraph with the coverage limit. Milestone 2 is now 8/20.
