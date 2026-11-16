@@ -486,6 +486,24 @@ fn workspace_owner(cwd: &Path) -> Option<String> {
     }
 }
 
+/// The name of the isolation a run with this configuration uses, for evidence records:
+/// `trust-code`, `bubblewrap`, `docker`, `podman`, or `unavailable` (the run itself fails).
+pub fn isolation_name(config: &ExecutionConfig, trust_code: bool) -> String {
+    if trust_code {
+        return "trust-code".into();
+    }
+    match resolve_backend(
+        config.sandbox,
+        cfg!(target_os = "linux"),
+        bwrap_usable,
+        engine_usable,
+    ) {
+        Ok(Backend::Bubblewrap) => "bubblewrap".into(),
+        Ok(Backend::Container(engine)) => engine.into(),
+        Err(_) => "unavailable".into(),
+    }
+}
+
 /// Refuses to start a sandboxed command whose host executable the sandbox can't see.
 ///
 /// A bare name like `python3` is resolved through the host's `PATH`, the same `PATH` the

@@ -5,6 +5,7 @@ import importlib
 import io
 import json
 import math
+import platform
 import statistics
 import stat
 import sys
@@ -114,7 +115,11 @@ elif mode == 'benchmark':
     payload = {'samples_ns': samples, 'median_ns': median,
                'mad_ns': statistics.median(abs(value - median) for value in samples),
                'successful_cases': len(cases),
-               'calls_per_sample': policy['calls_per_sample'] * len(cases)}
+               'calls_per_sample': policy['calls_per_sample'] * len(cases),
+               # Where the timing really ran: the interpreter inside the sandbox, not the host's.
+               'interpreter': {'implementation': sys.implementation.name,
+                               'version': platform.python_version(),
+                               'executable': sys.executable}}
 else:
     raise ValueError('unknown harness mode')
 print(json.dumps(payload, allow_nan=False))

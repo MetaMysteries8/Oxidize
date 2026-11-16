@@ -37,6 +37,39 @@ pub struct Benchmark {
     pub mad_ns: f64,
     pub successful_cases: usize,
     pub calls_per_sample: usize,
+    /// Reported by the harness from inside the run. Missing in evidence from before it existed.
+    #[serde(default)]
+    pub interpreter: Option<Interpreter>,
+    /// What produced this measurement. Missing in evidence recorded before it existed.
+    #[serde(default)]
+    pub context: Option<MeasurementContext>,
+}
+
+/// The Python that actually executed the timing, as it reported itself.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Interpreter {
+    pub implementation: String,
+    pub version: String,
+    pub executable: String,
+}
+
+/// Everything needed to judge or reproduce a measurement (Milestone 2 §1): where it ran,
+/// how it was isolated, the sampling policy, what it covers and what it had to beat.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MeasurementContext {
+    /// `std::env::consts::OS` and `ARCH` of the host that ran it.
+    pub os: String,
+    pub arch: String,
+    /// `bubblewrap`, `docker`, `podman` or `trust-code`.
+    pub isolation: String,
+    /// The configured interpreter command and the harness mode that ran.
+    pub command: Vec<String>,
+    pub iterations: usize,
+    pub warmup: usize,
+    pub calls_per_sample: usize,
+    pub minimum_speedup: f64,
+    /// What the number covers. Never a whole-application claim.
+    pub scope: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Evidence {
@@ -53,6 +86,32 @@ pub struct Evidence {
 }
 fn legacy_observation_schema_version() -> u32 {
     1
+}
+
+/// One report line saying exactly what produced a measurement, or that it wasn't recorded.
+pub fn measurement_line(benchmark: &Benchmark) -> String {
+    let interpreter = benchmark
+        .interpreter
+        .as_ref()
+        .map(|i| format!("{} {} (`{}`)", i.implementation, i.version, i.executable))
+        .unwrap_or_else(|| "an unrecorded interpreter".into());
+    match &benchmark.context {
+        Some(c) => format!(
+            "Measured with {interpreter} on {}/{}, isolation `{}`: {} samples after {} warm-up, {} calls per sample, acceptance threshold {}x. Scope: {}.\n\n",
+            c.os,
+            c.arch,
+            c.isolation,
+            c.iterations,
+            c.warmup,
+            c.calls_per_sample,
+            c.minimum_speedup,
+            c.scope
+        ),
+        None => {
+            "Measurement context: not recorded (evidence from before contexts were captured).\n\n"
+                .into()
+        }
+    }
 }
 #[derive(Deserialize)]
 struct Observations {
@@ -666,7 +725,20 @@ impl Session {
             "at least one successful workload is required for benchmarking"
         );
         // A second process and fresh copy prevent tests/observations from seeding timing state.
-        let benchmark = self.harness(root, c, &Value::Array(successful), "benchmark", trust)?;
+        let mut benchmark: Benchmark =
+            self.harness(root, c, &Value::Array(successful), "benchmark", trust)?;
+        let performance = &self.state.config.performance;
+        benchmark.context = Some(MeasurementContext {
+            os: std::env::consts::OS.into(),
+            arch: std::env::consts::ARCH.into(),
+            isolation: oxidize_core::process::isolation_name(&self.state.config.execution, trust),
+            command: vec![self.state.config.python.clone(), "harness:benchmark".into(), c.id.clone()],
+            iterations: performance.iterations,
+            warmup: performance.warmup,
+            calls_per_sample: performance.calls_per_sample,
+            minimum_speedup: performance.minimum_speedup,
+            scope: "component workload; includes Python/FFI call overhead; not a whole-application figure".into(),
+        });
         let evidence = Evidence {
             observation_schema_version: observed.observation_schema_version,
             file_effect_paths: observed.file_effect_paths,
@@ -735,6 +807,7 @@ impl Session {
                         e.benchmark.mad_ns,
                         e.benchmark.samples_ns.len()
                     );
+                    report += &measurement_line(&e.benchmark);
                     let mutation = if e.observation_schema_version == 2
                         && e.observations.iter().all(has_argument_evidence)
                     {
@@ -894,6 +967,63 @@ fn integrate(root: &Path, c: &Component, module: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn older_benchmarks_without_a_context_still_load_and_say_so() {
+        let legacy: Benchmark = serde_json::from_str(
+            r#"{"samples_ns":[1.0],"median_ns":1.0,"mad_ns":0.0,"successful_cases":1,"calls_per_sample":3}"#,
+        )
+        .unwrap();
+        assert!(legacy.context.is_none() && legacy.interpreter.is_none());
+        assert!(measurement_line(&legacy).contains("not recorded"));
+    }
+
+    #[test]
+    fn a_measurement_states_where_how_and_what_it_covers() {
+        let benchmark = Benchmark {
+            samples_ns: vec![1.0],
+            median_ns: 1.0,
+            mad_ns: 0.0,
+            successful_cases: 1,
+            calls_per_sample: 3,
+            interpreter: Some(Interpreter {
+                implementation: "cpython".into(),
+                version: "3.14.4".into(),
+                executable: "/usr/bin/python3".into(),
+            }),
+            context: Some(MeasurementContext {
+                os: "linux".into(),
+                arch: "x86_64".into(),
+                isolation: "bubblewrap".into(),
+                command: vec![
+                    "/usr/bin/python3".into(),
+                    "harness:benchmark".into(),
+                    "compute.py:f".into(),
+                ],
+                iterations: 7,
+                warmup: 2,
+                calls_per_sample: 3,
+                minimum_speedup: 1.0,
+                scope: "component workload".into(),
+            }),
+        };
+        let line = measurement_line(&benchmark);
+        for part in [
+            "cpython 3.14.4",
+            "/usr/bin/python3",
+            "linux/x86_64",
+            "`bubblewrap`",
+            "7 samples after 2 warm-up",
+            "threshold 1x",
+            "component workload",
+        ] {
+            assert!(line.contains(part), "missing `{part}` in: {line}");
+        }
+        // Round-trips through checkpoint JSON unchanged.
+        let back: Benchmark =
+            serde_json::from_str(&serde_json::to_string(&benchmark).unwrap()).unwrap();
+        assert_eq!(back.context, benchmark.context);
+    }
 
     #[test]
     fn closing_session_releases_lock_even_with_an_inherited_descriptor() {
