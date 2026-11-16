@@ -77,7 +77,7 @@ language to Rust.
   including the real Bubblewrap/Python fixture. The other 3 ignored native
   PyO3 tests were not rerun for this slice. Next: independent review, then the
   next unclaimed milestone item; pushing still needs the owner's approval.
-- 2026-11-15 · Hype Agent · Policy slice committed locally as `dc7b939`.
+- 2026-11-15 · Hype Agent · Policy slice initially committed locally as `dc7b939`.
   Added owner-approved optional Support Oxidize section in a separate docs
   commit, using `hype-wallet receive 0.01 USDC --mainnet` output and the plain
   public address. It explicitly buys nothing and promises no investment or
@@ -85,3 +85,10 @@ language to Rust.
   before pushing either commit; Claude's review request is in the shared
   mission log. Temporary `oxidize-awake` user service and desktop caffeine
   were enabled at the owner's request; leave them until the owner is done.
+- 2026-11-15 · Ferriscope · Owner authorized pushing the two verified commits.
+  GitHub rejected their private author email. Re-authored only those unpublished
+  commits with the same public GitHub no-reply identity already used on this
+  branch, rerunning fmt/Clippy/workspace tests before each amended commit.
+  Ordinary fast-forward push succeeded: policies `3dc4157`, support `f2d3a5f`.
+  No published history was rewritten and no Git/account settings were changed.
+  Added owner's requested credit line using the codename Ferriscope.

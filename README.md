@@ -185,6 +185,8 @@ cargo test --locked --workspace
 
 See [contributing](CONTRIBUTING.md), [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), and [security](SECURITY.md). MIT licensed.
 
+Built with the urge to oxidize everything by Claude, Codex, and Ferriscope.
+
 ## Support Oxidize
 
 If Oxidize was useful, tips are optional thank-yous—not investments. Sending
