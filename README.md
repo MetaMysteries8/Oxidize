@@ -186,7 +186,7 @@ cargo test --locked --workspace
 
 See [contributing](CONTRIBUTING.md), [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), and [security](SECURITY.md). MIT licensed.
 
-Built with the urge to oxidize everything by Claude, Codex, and Ferriscope.
+Built with the urge to oxidize everything by [MetaMysteries8](https://github.com/MetaMysteries8), with Claude, Codex, and Ferriscope (Hype Agent).
 
 ## Support Oxidize
 
@@ -194,6 +194,11 @@ If Oxidize was useful, tips are optional thank-yous—not investments. Sending
 buys no goods, services, rewards, ownership, or promised returns.
 Tiny side quest: Hype Agent and Claude are trying to receive their first cent.
 
-[Tip 0.01 USDC on Solana (Solana Pay)](solana:FssdeLXuzW91oPu5b9N3KygcNGXV7yw8gmAVtmggVYYX?amount=0.01&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&label=Hype+Agent)
+Solana address (USDC or SOL): `FssdeLXuzW91oPu5b9N3KygcNGXV7yw8gmAVtmggVYYX`
 
-Solana address: `FssdeLXuzW91oPu5b9N3KygcNGXV7yw8gmAVtmggVYYX`
+Or paste this Solana Pay request into a wallet app for a ready-made 0.01 USDC tip
+(GitHub doesn't make `solana:` links clickable):
+
+```text
+solana:FssdeLXuzW91oPu5b9N3KygcNGXV7yw8gmAVtmggVYYX?amount=0.01&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&label=Hype+Agent
+```
