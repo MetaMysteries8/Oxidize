@@ -16,8 +16,10 @@ use std::{
 };
 
 mod comparison;
+mod history;
 use comparison::{differential_mismatch, has_argument_evidence, has_file_effect_evidence};
 pub use comparison::{equivalent, equivalent_with_policy};
+pub use history::{CHECKPOINT_SCHEMA_VERSION, EVENT_SCHEMA_VERSION, Event, EventKind};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -179,6 +181,29 @@ pub fn provenance_line(provenance: Option<&CaseProvenance>) -> String {
         }
     }
 }
+/// The report's history paragraph: the checkpoint schema, how many events, and any upgrade gap.
+pub fn history_line(state: &State) -> String {
+    let upgrades: Vec<String> = state
+        .events
+        .iter()
+        .filter_map(|e| match &e.kind {
+            EventKind::SchemaUpgraded { from, to, backup } => Some(format!(
+                "upgraded from schema {from} to {to} (original kept as `{backup}`); changes before that were not recorded"
+            )),
+            _ => None,
+        })
+        .collect();
+    format!(
+        "## History\n\nCheckpoint schema {}; {} recorded event(s), each saved atomically with the state change it describes, in `report.json` under `events`.{}\n\n",
+        state.schema_version,
+        state.events.len(),
+        if upgrades.is_empty() {
+            String::new()
+        } else {
+            format!(" This session was {}.", upgrades.join("; then "))
+        }
+    )
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct State {
     pub schema_version: u32,
@@ -187,6 +212,8 @@ pub struct State {
     pub config: Config,
     pub current: Option<usize>,
     pub attempts: Vec<Attempt>,
+    /// Every state change, saved atomically with it. Starts at the upgrade for older sessions.
+    pub events: Vec<Event>,
 }
 pub struct Session {
     pub root: PathBuf,
@@ -221,25 +248,7 @@ impl Session {
             .context("another Oxidize process owns this project")?;
         let state_path = directory.join("state.json");
         let state = if state_path.exists() {
-            let state: State = serde_json::from_slice(&fs::read(&state_path)?)
-                .context("checkpoint is corrupt; original project is untouched")?;
-            ensure!(state.schema_version == 1, "unsupported checkpoint schema");
-            state.config.validate()?;
-            ensure!(
-                state
-                    .attempts
-                    .iter()
-                    .enumerate()
-                    .all(|(i, a)| a.id == i + 1 && a.base.is_none_or(|b| b < a.id && b > 0)),
-                "invalid checkpoint history"
-            );
-            ensure!(
-                state
-                    .current
-                    .is_none_or(|id| id > 0 && id <= state.attempts.len()),
-                "invalid current checkpoint"
-            );
-            state
+            history::load(&directory)?
         } else {
             let config = Config::load(&root)?;
             let source_fingerprint = fingerprint(&root)?;
@@ -261,14 +270,16 @@ impl Session {
                 .ok()
                 .filter(|o| o.status.success())
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().into());
-            let state = State {
-                schema_version: 1,
+            let mut state = State {
+                schema_version: CHECKPOINT_SCHEMA_VERSION,
                 source_fingerprint,
                 source_revision: revision,
                 config,
                 current: None,
                 attempts: vec![],
+                events: vec![],
             };
+            state.record(EventKind::SessionCreated);
             atomic_json(&state_path, &state)?;
             state
         };
@@ -323,7 +334,12 @@ impl Session {
         self.assert_base_unchanged()?;
         let a = &mut self.state.attempts[id - 1];
         a.phase = Phase::RolledBack;
-        self.state.current = a.base;
+        let restored = a.base;
+        self.state.current = restored;
+        self.state.record(EventKind::RolledBack {
+            attempt: id,
+            restored,
+        });
         self.save()
     }
     pub fn migrate(
@@ -379,6 +395,11 @@ impl Session {
             repaired: 0,
             provenance: None,
         });
+        self.state.record(EventKind::AttemptStarted {
+            attempt: id,
+            component: component_id.into(),
+            base: self.state.current,
+        });
         self.save()?;
         self.execute(id, response, trust_code, allow_provider)?;
         Ok(id)
@@ -409,6 +430,8 @@ impl Session {
             "resume base differs from current checkpoint"
         );
         // Replay in a fresh directory using persisted generated code; no partially integrated source is trusted.
+        self.state.record(EventKind::AttemptResumed { attempt: id });
+        self.save()?;
         self.execute(id, response, trust_code, allow_provider)?;
         Ok(id)
     }
@@ -423,6 +446,10 @@ impl Session {
         if let Err(error) = result {
             self.state.attempts[id - 1].phase = Phase::Rejected;
             self.state.attempts[id - 1].error = Some(format!("{error:#}"));
+            self.state.record(EventKind::Rejected {
+                attempt: id,
+                error: format!("{error:#}"),
+            });
             self.save()?;
             return Err(error.context(
                 "migration rejected; previous accepted workspace and input project are preserved",
@@ -435,7 +462,9 @@ impl Session {
             !oxidize_core::process::cancelled(),
             "migration cancelled; resume can replay this checkpoint"
         );
-        self.state.attempts[id - 1].phase = phase;
+        self.state.attempts[id - 1].phase = phase.clone();
+        self.state
+            .record(EventKind::PhaseChanged { attempt: id, phase });
         self.save()
     }
     fn check(
@@ -706,8 +735,13 @@ impl Session {
         self.state.attempts[id - 1].phase = Phase::Accepted;
         let previous = self.state.current;
         self.state.current = Some(id);
+        self.state.record(EventKind::Accepted {
+            attempt: id,
+            previous,
+        });
         if let Err(error) = self.save() {
             self.state.current = previous;
+            self.state.events.pop();
             return Err(error);
         }
         Ok(())
@@ -845,6 +879,7 @@ impl Session {
             "## File-effect scope\n\nRequested project-relative regular files: `{}`. Each configured file's presence, byte length and SHA256 are captured before/after each behavior call, including exceptions, and compared exactly. No file paths configured means no file-effect claim. Limits: 32 paths, 1 MiB per file. Raw contents are not retained. Tests/timing and import-time effects, unlisted paths, transient writes restored between snapshots, metadata/permissions, directory trees and external effects remain unverified.\n\n",
             serde_json::to_string(&self.state.config.verification.file_effect_paths)?
         );
+        report += &history_line(&self.state);
         for a in &self.state.attempts {
             report += &format!(
                 "## Attempt {}: `{}`\n\nStatus: {:?}\n\nCompiler repairs: {}\n\n",

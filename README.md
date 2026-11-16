@@ -148,7 +148,8 @@ For agent-assisted operation without a provider call, supply `--response code.js
 ```text
 PROJECT/.oxidize/
   analysis.json, plan.json, plan.md
-  state.json, session.lock
+  state.json, session.lock   checkpoint with its event history
+  state.v1.json              original of an upgraded v0.1.x checkpoint, if any
   baseline/                  immutable source snapshot
   attempts/0001/project/     compiled/integrated candidate
   report.md, report.json
@@ -158,7 +159,7 @@ PROJECT/.oxidize/
 
 On this development branch, tests, behavior capture and timing each run in fresh temporary copies under `.oxidize/validation/`, cleaned up on return. The original source, canonical baseline and accepted candidate are not used as execution working directories. Test-generated setup files do not seed behavior capture, and observation state does not seed timing; include required workload inputs in the project beforehand. These copies are not an OS sandbox, and trusted code with absolute paths can still access the host. Source fingerprints detect edits; modified original/baseline/accepted source is not silently overwritten. Snapshots exclude known secrets, VCS state, build caches, virtual environments, and dependency directories, and reject symlinks and oversized files. Projects depending on those exclusions require deliberate preparation. Session config is frozen at baseline; preserve a session and start a new copy to change input/configuration.
 
-Existing v0.1 checkpoint evidence remains readable. Reports label its argument-mutation evidence as unavailable. New observations carry `observation_schema_version = 2`; old observations cannot be treated as mutation-equivalent without replay. The top-level checkpoint schema remains version 1 because this is an additive evidence field.
+Existing v0.1 checkpoint evidence remains readable. Reports label its argument-mutation evidence as unavailable. New observations carry `observation_schema_version = 2`; old observations cannot be treated as mutation-equivalent without replay. On this development branch the checkpoint itself is schema 2: it adds an event history saved atomically with each state change. Opening a v0.1.x (schema 1) session upgrades it once and keeps the original bytes as `state.v1.json`; earlier history was never recorded and is not invented. A checkpoint from a newer Oxidize is refused untouched, and v0.1.x refuses an upgraded one, so keep `state.v1.json` if you may go back.
 
 The [mutation fixture](fixtures/python-mutation/README.md) demonstrates a compiled replacement that passes existing tests yet is rejected for missing an in-place mutation, then resumes successfully with corrected Rust code.
 

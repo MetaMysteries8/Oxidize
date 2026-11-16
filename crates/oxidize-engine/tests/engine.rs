@@ -1,5 +1,5 @@
 use oxidize_core::{Config, fingerprint, snapshot};
-use oxidize_engine::{Phase, Session};
+use oxidize_engine::{EventKind, Phase, Session};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -374,6 +374,36 @@ fn real_migration_rejection_resume_and_rollback() {
     );
     recovered.rollback().unwrap();
     assert!(recovered.state.current.is_none());
+
+    // The history tells the same story, in order: accept, roll back, reject, resume, accept,
+    // roll back.
+    let story: Vec<_> = recovered
+        .state
+        .events
+        .iter()
+        .filter_map(|e| match &e.kind {
+            EventKind::Accepted { attempt, previous } => {
+                Some(format!("accepted {attempt} from {previous:?}"))
+            }
+            EventKind::RolledBack { attempt, restored } => {
+                Some(format!("rolled back {attempt} to {restored:?}"))
+            }
+            EventKind::Rejected { attempt, .. } => Some(format!("rejected {attempt}")),
+            EventKind::AttemptResumed { attempt } => Some(format!("resumed {attempt}")),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        story,
+        [
+            "accepted 1 from None",
+            "rolled back 1 to None",
+            "rejected 2",
+            "resumed 2",
+            "accepted 2 from None",
+            "rolled back 2 to None",
+        ]
+    );
 }
 
 #[test]

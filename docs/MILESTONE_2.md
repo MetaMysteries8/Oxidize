@@ -25,7 +25,7 @@ Acceptance: a compilable candidate that passes existing tests but changes an obs
 ## 3. Transaction and checkpoint recovery
 
 - [x] Run baseline tests in disposable validation copies so tests cannot corrupt the canonical baseline checkpoint.
-- [ ] Add a versioned event history and explicit checkpoint schema-upgrade strategy while preserving v0.1.0 sessions.
+- [x] Add a versioned event history and explicit checkpoint schema-upgrade strategy while preserving v0.1.0 sessions. Evidence: checkpoint schema 2 records numbered, versioned events in the same atomic write as each state change. A real checkpoint written by the v0.1.0 release (`fixtures/legacy-v0.1.0-session`) upgrades with nothing lost, and its original bytes are kept as `state.v1.json`. Interrupted upgrades redo safely, a conflicting backup is never overwritten, and newer or unknown schemas are refused untouched (`checkpoint_upgrade` tests). The real PyO3 rollback test asserts the full event story ([verification](VERIFICATION.md#checkpoint-history-and-upgrades)).
 - [ ] Add deterministic interruption/fault-injection tests around generation, integration, evidence collection and atomic promotion, including write failures.
 - [ ] Make resume and repeated rollback safe and reproducible without losing unrelated input edits or reusing stale evidence.
 

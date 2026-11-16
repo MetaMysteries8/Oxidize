@@ -10,7 +10,7 @@ Measurement uses Python `perf_counter_ns` in independent original/candidate proc
 
 Exact comparisons are the default and preserve scalar types, list/tuple distinctions, dict order, exceptions, stdout/stderr, and post-call positional/keyword argument values, including mutations before exceptions. Non-finite floats and arbitrary objects fail instead of being silently normalized. Unconfigured file/network effects, identity/aliasing/cyclic objects, timing/concurrency, import races, reflection/docstrings/annotations, Python object identity and unsupported calls remain unverified. Passing tests and cases is bounded evidence, not a mathematical proof of equivalence.
 
-Development regressions cover test/workload writes on success and failure, repeated verification without snapshot contamination, fresh inputs for every invocation, distinct observation/timing PIDs and workspaces, temporary-copy cleanup, and readable legacy observation evidence. Observation schema 2 adds typed argument snapshots; legacy schema 1 is reported as missing that evidence and cannot be compared as mutation-equivalent without replay. The top-level checkpoint schema remains 1 for additive fields. Unconfigured file writes in validation copies are discarded, not compared; path-dependent workloads and test-generated setup require explicit preparation. Scoped copies do not sandbox trusted code accessing absolute host paths.
+Development regressions cover test/workload writes on success and failure, repeated verification without snapshot contamination, fresh inputs for every invocation, distinct observation/timing PIDs and workspaces, temporary-copy cleanup, and readable legacy observation evidence. Observation schema 2 adds typed argument snapshots; legacy schema 1 is reported as missing that evidence and cannot be compared as mutation-equivalent without replay. The top-level checkpoint schema is 2 (see [checkpoint upgrades](#checkpoint-history-and-upgrades)). Unconfigured file writes in validation copies are discarded, not compared; path-dependent workloads and test-generated setup require explicit preparation. Scoped copies do not sandbox trusted code accessing absolute host paths.
 
 ## Explicit comparison opt-ins
 
@@ -173,3 +173,38 @@ The wrong candidate writes `wrong\0\xff` instead of `first\0\xff`: same length, 
 `test_effects.py`, which checks only the return values and errors. Only the configured
 file-effect comparison catches it. Scope: only the listed files are observed. Unlisted,
 transient or import-time writes, metadata and external systems remain unverified.
+
+## Checkpoint history and upgrades
+
+Milestone 2 §3. `state.json` (schema 2) carries `events`: numbered, versioned records of
+session creation, schema upgrades, attempt start/resume, phase changes, acceptance (with the
+previous pointer), rejection (with the error) and rollback (with the restored pointer). Each
+event is written in the same atomic write as the state change it describes, so they can't
+disagree after a crash. Opening validates the history: contiguous numbering, a known event
+version, a creation or upgrade event first, and only real attempt numbers.
+
+Evidence (`crates/oxidize-engine/tests/checkpoint_upgrade.rs`, standard tests):
+
+- `fixtures/legacy-v0.1.0-session/state.json` is an unmodified checkpoint written by the
+  `v0.1.0` release (how it was made is in that folder's README). Opening it gives schema 2 with
+  the config, attempt, saved code, checks, error and legacy schema-1 evidence intact, and a single
+  `schema_upgraded` event. The original is kept byte for byte as `state.v1.json`, the report
+  states the upgrade and the gap before it, and reopening doesn't upgrade again.
+- Interrupted after the backup and before the new state, the next open upgrades again. A
+  `state.v1.json` that isn't this checkpoint is never overwritten: opening is refused and both
+  files stay as they were.
+- A newer schema is refused with "written by a newer Oxidize". Schema 0 and a string version are
+  refused as unsupported. In each case nothing on disk changes.
+- A new session records its creation, and a rejected attempt records its start, phases and
+  rejection. Reopening returns the same history. A renumbered event is refused.
+- The opt-in real PyO3 test `real_migration_rejection_resume_and_rollback` asserts the
+  history of a real session: accepted 1, rolled back 1, rejected 2, resumed 2, accepted 2,
+  rolled back 2 (run with `--include-ignored` on Linux, 2026-11-16).
+
+Limits: there is no downgrade. The v0.1.0 binary refuses an upgraded checkpoint, failing
+closed on its newer fields ("checkpoint is corrupt … unknown field `comparison`"). Copying
+`state.v1.json` back over `state.json` makes it readable by v0.1.0 again (checked by hand,
+2026-11-16). That loses everything recorded since the
+upgrade. Events are a log for people and reports. Resume and rollback still act on the
+attempts and the accepted pointer, not by replaying events. Timestamps come from the host
+clock and are not evidence of ordering. `seq` is.

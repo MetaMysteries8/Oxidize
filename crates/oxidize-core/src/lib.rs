@@ -384,10 +384,17 @@ pub fn digest(bytes: &[u8]) -> String {
 }
 
 pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
+    atomic_write(path, &serde_json::to_vec_pretty(value)?)
+}
+
+/// Replace `path` with `bytes` so a reader sees either the old file or the whole new one.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
-    let temporary = path.with_extension("json.tmp");
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = PathBuf::from(temporary);
     let mut f = fs::File::create(&temporary)?;
-    f.write_all(&serde_json::to_vec_pretty(value)?)?;
+    f.write_all(bytes)?;
     f.sync_all()?;
     fs::rename(temporary, path)?;
     #[cfg(unix)]

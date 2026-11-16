@@ -6,6 +6,11 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### Checkpoint history and upgrades
+
+- Checkpoint schema 2: `state.json` records a numbered, versioned event history (creation, upgrade, attempt start/resume, phase changes, acceptance, rejection, rollback), each saved atomically with its state change. Reports state the schema and event count.
+- v0.1.x sessions upgrade on open, and their original checkpoint is kept as `state.v1.json`. This is tested against a real checkpoint written by v0.1.0. Newer or unknown schemas are refused without touching disk. There is no downgrade: v0.1.x refuses schema 2, so restore `state.v1.json` to go back.
+
 ### Evidence context and provenance
 
 - Every measurement records the interpreter (from inside the run), rustc, OS/arch, isolation backend, command, sampling policy, acceptance threshold and scope, and the report states them.
