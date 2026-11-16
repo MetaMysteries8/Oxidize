@@ -61,15 +61,16 @@ handling all differ. Even the *original* Python behaves differently. So:
   (candidates: E2B, Daytona, Modal, Vercel Sandbox, Cloudflare, Google Cloud Run sandboxes).
   **Target E2B's API first:** Pollinations runs E2B- and Azure-hosted Linux sandboxes behind an
   E2B-compatible API (`https://gen.pollinations.ai/alpha/e2b`, paid in Pollen, alpha), so one
-  backend covers both.
+  backend covers both. Set it up with the Pollinations CLI (`polli auth login` mints a key with
+  the `account:machines` permission; `polli sandbox ssh-config` sets up SSH).
   It would upload a workspace snapshot, run the whole build/test batch in one go, and return
   the output and evidence labelled with where it ran. Code leaving the machine must be
   explicitly authorized, like provider transmission. API keys never enter the sandbox. Cache
   toolchain images to keep it fast.
-- **Providers:** Pollinations is OpenAI-compatible at `https://gen.pollinations.ai/v1`, with
-  coding models such as `qwen/qwen3-coder-next` and `openai/gpt-5.3-codex`, so it should work
-  through the generic `[provider]` configuration (`endpoint` plus `api_key_env`). Live-test it
-  (opt-in) before claiming support.
+- **Providers:** Pollinations is OpenAI-compatible at `https://gen.pollinations.ai/v1`, so it
+  should work through the generic `[provider]` configuration (`endpoint` plus `api_key_env`).
+  Pick models from its live catalog (`GET /v1/models`), not from names written into docs, which
+  go stale. Live-test it (opt-in) before claiming support.
 - **Dependency vetting:** Pollinations' hosted Packages MCP reports crates.io/npm/PyPI versions
   and OSV vulnerabilities, a candidate check before Oxidize adds a dependency to a port.
 
