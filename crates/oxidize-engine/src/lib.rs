@@ -62,6 +62,9 @@ pub struct MeasurementContext {
     pub arch: String,
     /// `bubblewrap`, `docker`, `podman` or `trust-code`.
     pub isolation: String,
+    /// `rustc --version` as seen by the isolated run that built the candidate, if it answered.
+    #[serde(default)]
+    pub rustc: Option<String>,
     /// The configured interpreter command and the harness mode that ran.
     pub command: Vec<String>,
     pub iterations: usize,
@@ -97,7 +100,8 @@ pub fn measurement_line(benchmark: &Benchmark) -> String {
         .unwrap_or_else(|| "an unrecorded interpreter".into());
     match &benchmark.context {
         Some(c) => format!(
-            "Measured with {interpreter} on {}/{}, isolation `{}`: {} samples after {} warm-up, {} calls per sample, acceptance threshold {}x. Scope: {}.\n\n",
+            "Measured with {interpreter} and {} on {}/{}, isolation `{}`: {} samples after {} warm-up, {} calls per sample, acceptance threshold {}x. Scope: {}.\n\n",
+            c.rustc.as_deref().unwrap_or("an unrecorded rustc"),
             c.os,
             c.arch,
             c.isolation,
@@ -780,6 +784,11 @@ impl Session {
             os: std::env::consts::OS.into(),
             arch: std::env::consts::ARCH.into(),
             isolation: oxidize_core::process::isolation_name(&self.state.config.execution, trust),
+            rustc: Runner { config: &self.state.config.execution, trust_code: trust }
+                .run(root, &["rustc".into(), "--version".into()])
+                .ok()
+                .filter(|o| o.success())
+                .map(|o| o.stdout.trim().to_string()),
             command: vec![self.state.config.python.clone(), "harness:benchmark".into(), c.id.clone()],
             iterations: performance.iterations,
             warmup: performance.warmup,
@@ -1066,6 +1075,7 @@ mod tests {
                 os: "linux".into(),
                 arch: "x86_64".into(),
                 isolation: "bubblewrap".into(),
+                rustc: Some("rustc 1.100.0 (0ef1bc386 2026-11-09)".into()),
                 command: vec![
                     "/usr/bin/python3".into(),
                     "harness:benchmark".into(),
@@ -1081,6 +1091,7 @@ mod tests {
         let line = measurement_line(&benchmark);
         for part in [
             "cpython 3.14.4",
+            "rustc 1.100.0",
             "/usr/bin/python3",
             "linux/x86_64",
             "`bubblewrap`",
