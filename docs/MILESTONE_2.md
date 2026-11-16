@@ -33,7 +33,7 @@ Acceptance: after each injected interruption, reopening either preserves the old
 
 ## 4. Execution and bounded repair
 
-- [ ] Validate a successful Bubblewrap build/test flow on a Linux host with user namespaces, including Cargo cache/lock and toolchain mount handling.
+- [x] Validate a successful Bubblewrap build/test flow on a Linux host with user namespaces, including Cargo cache/lock and toolchain mount handling. Evidence: [the sandboxed native demo](VERIFICATION.md#sandboxed-native-demo), run manually on Ubuntu (CI can't host it).
 - [ ] Add process/resource supervision appropriate to the supported host, explicit unsupported-platform errors, and tests for cancellation and orphan cleanup.
 - [ ] Extend finite repair budgets to integrated-test failures where useful, retain diagnostics/usage per attempt, and stop on repeated/stalled changes.
 - [ ] Keep provider transmission and additional host filesystem access explicitly authorized; never silently disable isolation to make a test pass.

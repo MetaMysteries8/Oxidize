@@ -110,3 +110,45 @@ then rejects the changed byte evidence under Bubblewrap. Config, malformed/legac
 evidence and reporting also have deterministic tests. A compiled native
 file-effect acceptance/rejection demonstration remains pending; this slice does
 not complete the full milestone gate or claim a performance improvement.
+
+## Sandboxed native demo
+
+The full native demo, run inside Bubblewrap without `--trust-code`. Validated on
+2026-11-15 on Ubuntu (Linux 7.0, `kernel.apparmor_restrict_unprivileged_userns=1`),
+Rust 1.100.0 via rustup, and system CPython 3.14 with development headers.
+
+```bash
+cargo fetch --locked --manifest-path examples/python-native/Cargo.toml
+cp -R fixtures/python-cli work/sbx
+# work/sbx/oxidize.toml: an interpreter the sandbox can see, and the toolchain read-only
+#   python = "/usr/bin/python3"
+#   test_command = ["/usr/bin/python3", "-m", "unittest", "discover", "-v"]   # [verification]
+#   read_only_paths = ["/home/<you>/.rustup", "/home/<you>/.cargo"]             # [execution]
+export CARGO_HOME=$HOME/.cargo RUSTUP_HOME=$HOME/.rustup
+oxidize analyze work/sbx && oxidize plan work/sbx
+oxidize --allow-host-paths migrate work/sbx --component compute.py:count_primes \
+  --response fixtures/python-cli/migration-response.json
+oxidize --allow-host-paths verify work/sbx
+oxidize --allow-host-paths benchmark work/sbx --component compute.py:count_primes
+oxidize report work/sbx
+/usr/bin/python3 work/sbx/.oxidize/attempts/0001/project/main.py 100   # 25
+oxidize rollback work/sbx
+```
+
+Observed: attempt 1 accepted; independent tests passed in a disposable copy; a
+component workload speedup of 239–288x across two runs (it includes Python/FFI call
+overhead, and is not a whole-application figure); the migrated program printed `25`;
+rollback restored the baseline. `~/.cargo` held only `bin`, `env` and `registry`, and no
+credentials, when it was mounted.
+
+Two problems found and fixed during validation:
+
+- **`linker cc not found`:** Debian/Ubuntu resolve `/usr/bin/cc` through
+  `/etc/alternatives`, which wasn't mounted. It is now part of the read-only system mounts.
+- **The wrong Python, silently:** with `python = "python3"`, the host resolved a Conda
+  3.13 that the sandbox can't see, so the sandbox used system 3.14 instead, and the built
+  module (`cpython-314`) then failed to import on the host. Sandboxed runs now refuse a
+  program whose host path is outside every mount, and name it.
+
+Not covered: cgroup resource limits, CI (its environment rejects user namespaces), and
+non-Ubuntu hosts.

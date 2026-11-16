@@ -6,6 +6,12 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### Sandbox validation
+
+- Validated the complete native demo inside Bubblewrap without `--trust-code` on an Ubuntu host with user namespaces (see [verification](docs/VERIFICATION.md#sandboxed-native-demo)).
+- Mount `/etc/alternatives` read-only in the sandbox: Debian/Ubuntu resolve `cc` through it, and without it every build script failed with "linker `cc` not found".
+- Refuse a sandboxed command whose host executable lies outside every mount, instead of silently running a different one on the sandbox's `PATH` (a Conda `python3` was being replaced by a system Python of another version).
+
 ### First implementation slice
 
 - Run independent tests, behavior observation and timing in fresh disposable copies, preserving canonical baseline and accepted source even when tests/workloads write project files.

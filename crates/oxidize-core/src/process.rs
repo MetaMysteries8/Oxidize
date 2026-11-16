@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         Arc,
@@ -15,6 +15,21 @@ use std::{
 
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 static HOST_MOUNTS_ALLOWED: AtomicBool = AtomicBool::new(false);
+
+/// System paths every sandboxed process sees read-only (when they exist on the host).
+///
+/// `/etc/alternatives` is required on Debian/Ubuntu: `/usr/bin/cc` is a symlink to
+/// `/etc/alternatives/cc`, which points back into `/usr/bin`, so without it the C linker
+/// vanishes inside the sandbox and every Rust build script fails with "linker `cc` not
+/// found". It holds only symlinks to installed tools; the rest of `/etc` stays hidden.
+pub const SYSTEM_READ_ONLY_PATHS: &[&str] = &[
+    "/usr",
+    "/bin",
+    "/lib",
+    "/lib64",
+    "/etc/ld.so.cache",
+    "/etc/alternatives",
+];
 /// Explicit caller authorization; repository-controlled configuration cannot grant itself host access.
 pub fn authorize_host_mounts() {
     HOST_MOUNTS_ALLOWED.store(true, Ordering::Relaxed);
@@ -78,9 +93,13 @@ impl Runner<'_> {
                     || HOST_MOUNTS_ALLOWED.load(Ordering::Relaxed),
                 "extra host mounts require --allow-host-paths after reviewing execution.read_only_paths"
             );
+            let mut visible: Vec<&Path> = SYSTEM_READ_ONLY_PATHS.iter().map(Path::new).collect();
+            visible.extend(self.config.read_only_paths.iter().map(PathBuf::as_path));
+            visible.push(cwd);
+            check_sandbox_program(&argv[0], std::env::var_os("PATH").as_deref(), &visible)?;
             let mut cmd = Command::new("bwrap");
             cmd.args(["--die-with-parent", "--unshare-all", "--new-session"]);
-            for path in ["/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache"] {
+            for path in SYSTEM_READ_ONLY_PATHS {
                 if Path::new(path).exists() {
                     cmd.args(["--ro-bind", path, path]);
                 }
@@ -219,9 +238,85 @@ impl Runner<'_> {
     }
 }
 
+/// Refuses to start a sandboxed command whose host executable the sandbox can't see.
+///
+/// A bare name like `python3` is resolved through the host's `PATH`, the same `PATH` the
+/// sandbox inherits. If that host binary lives outside every mounted path (say, a Conda
+/// Python under the home directory), the sandbox would silently fall through to a different
+/// one on its `PATH` (a system Python of another version): the build would target the wrong
+/// interpreter and its result would not import on the host. Fail closed and say how to fix it.
+/// A name that isn't on the host `PATH` at all is left for the sandbox to report.
+pub fn check_sandbox_program(
+    program: &str,
+    path_env: Option<&std::ffi::OsStr>,
+    visible: &[&Path],
+) -> Result<()> {
+    let host = if program.contains('/') {
+        Some(PathBuf::from(program))
+    } else {
+        path_env.and_then(|paths| {
+            std::env::split_paths(paths)
+                .map(|dir| dir.join(program))
+                .find(|candidate| candidate.is_file())
+        })
+    };
+    let Some(host) = host else { return Ok(()) };
+    if visible.iter().any(|root| host.starts_with(root)) {
+        return Ok(());
+    }
+    bail!(
+        "`{program}` resolves to {} on this host, which the sandbox can't see, so a different `{program}` would run inside it. Set an absolute path to an interpreter/tool under a mounted path (e.g. python = \"/usr/bin/python3\"), or add its directory to execution.read_only_paths (then pass --allow-host-paths).",
+        host.display()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sandbox_refuses_a_program_it_cannot_see_instead_of_running_another() {
+        let host = tempfile::tempdir().unwrap();
+        let conda_bin = host.path().join("conda/bin");
+        std::fs::create_dir_all(&conda_bin).unwrap();
+        std::fs::write(conda_bin.join("python3"), "").unwrap();
+        let path_env = std::env::join_paths([conda_bin.as_path(), Path::new("/usr/bin")]).unwrap();
+        let usr = Path::new("/usr");
+
+        // The host's first `python3` is outside every mount: refuse, naming it.
+        let error = check_sandbox_program("python3", Some(&path_env), &[usr])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("can't see"), "{error}");
+        assert!(
+            error.contains(&conda_bin.join("python3").display().to_string()),
+            "{error}"
+        );
+        // Mounting its directory makes it visible.
+        let conda = host.path().join("conda");
+        check_sandbox_program("python3", Some(&path_env), &[usr, conda.as_path()]).unwrap();
+        // Absolute paths are checked the same way.
+        assert!(
+            check_sandbox_program(
+                &conda_bin.join("python3").display().to_string(),
+                None,
+                &[usr]
+            )
+            .is_err()
+        );
+        check_sandbox_program("/usr/bin/python3", None, &[usr]).unwrap();
+        // A name not on the host PATH at all is the sandbox's to report.
+        check_sandbox_program("definitely-not-installed-xyz", Some(&path_env), &[usr]).unwrap();
+    }
+
+    #[test]
+    fn sandbox_exposes_the_alternatives_symlinks_the_linker_needs() {
+        // On Debian/Ubuntu `cc` resolves through /etc/alternatives; see SYSTEM_READ_ONLY_PATHS.
+        assert!(SYSTEM_READ_ONLY_PATHS.contains(&"/etc/alternatives"));
+        // ...but never the rest of /etc, which can hold credentials.
+        assert!(!SYSTEM_READ_ONLY_PATHS.contains(&"/etc"));
+    }
+
     #[test]
     fn captures_failure_and_limits() {
         let d = tempfile::tempdir().unwrap();

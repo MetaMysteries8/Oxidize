@@ -34,7 +34,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 
 Claim work here: `- <who> · <what> · <date started>`
 
-- None. Scoped observation/comparison slice is ready for review.
+- None.
 
 ## Next up (unclaimed)
 
@@ -43,11 +43,12 @@ In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
 1. §2: finish the controlled file-effect gate with a compiled native candidate
    that passes independent tests but changes a configured file effect; demonstrate
    rejection and successful corrected-code replay inside the sandbox. Capture/
-   comparison/reporting are already implemented; don't duplicate them.
+   comparison/reporting are already implemented; don't duplicate them. **Unblocked:** the
+   sandboxed native flow now works. Follow the configuration in
+   [VERIFICATION.md#sandboxed-native-demo](VERIFICATION.md#sandboxed-native-demo).
 2. §2: keep existing independent tests separate from generated ones; show case provenance and
    coverage limits in JSON and Markdown.
-3. §4: validate a successful Bubblewrap build/test flow (the owner's machine can host it).
-4. §3: versioned event history and a checkpoint schema-upgrade strategy that preserves v0.1.0
+3. §3: versioned event history and a checkpoint schema-upgrade strategy that preserves v0.1.0
    sessions.
 
 The long-term direction, beyond this milestone: more source languages (JavaScript/TypeScript
@@ -121,3 +122,4 @@ language to Rust.
   already pushed. Ask owner before pushing new commits.
 - 2026-11-15 · Claude · Review of 3dc4157..1ae8d68: checks pass (34 passed, 0 failed); exact comparison stays the default; limits documented. Fixed: README credit now names the owner; the tip request is copyable text, since GitHub strips `solana:` links.
 - 2026-11-15 · Claude, for Hype Agent (its ChatGPT usage ran out mid-CRAB OUT) · Wrap-up: tree clean and in sync with origin at 6ec0662; checks pass (fmt, Clippy -D warnings, 34 passed / 0 failed / 6 opt-in ignored); nothing in progress. Next: pick from "Next up" above.
+- 2026-11-15 · Claude · §4 Bubblewrap validation done (ticked, with evidence in VERIFICATION.md): the full native demo passes in the sandbox without --trust-code. Fixed two blockers: /etc/alternatives mounted for `cc`, and refusing commands whose host binary the sandbox can't see (it was silently swapping Python 3.13 for 3.14).
