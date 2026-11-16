@@ -54,5 +54,18 @@ handling all differ. Even the *original* Python behaves differently. So:
   benchmarks on a real Windows host (a Windows CI runner, Windows Sandbox, a VM, or the
   user's machine), and record the platform with every piece of evidence.
 - **The rule:** never claim a platform whose tests didn't run on that platform.
+- **Cloud proof first, cheaply:** a GitHub Actions matrix (Linux, Windows, macOS runners,
+  free for public repos) running the build and tests gives real per-platform evidence
+  without owning the machines.
+- **A `remote` sandbox backend, later and opt-in:** a hosted microVM/container service
+  (candidates: E2B, Daytona, Modal, Vercel Sandbox, Cloudflare, Google Cloud Run sandboxes).
+  It would upload a workspace snapshot, run the whole build/test batch in one go, and return
+  the output and evidence labelled with where it ran. Code leaving the machine must be
+  explicitly authorized, like provider transmission. API keys never enter the sandbox. Cache
+  toolchain images to keep it fast.
+- **Providers:** Pollinations offers AI generation with free compute credits, and has had an
+  OpenAI-compatible text endpoint, so it may work as a low-cost migration provider through
+  the generic configuration. Live-test it (opt-in) before claiming support. No Pollinations
+  sandbox product was found (2026-11-15).
 
 Do not create empty crates for these features or mark them complete because a command name exists.
