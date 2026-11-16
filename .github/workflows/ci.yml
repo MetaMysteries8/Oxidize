@@ -19,16 +19,15 @@ jobs:
       - run: cargo fetch --locked --manifest-path examples/python-native/Cargo.toml
       - run: cargo test --locked -p oxidize-engine --test engine -- --ignored --nocapture --test-threads=1
 
-  # Per-platform evidence (docs/ROADMAP.md, "proven per platform"). Non-blocking while the
-  # Python/PyO3 path is Linux-validated only: a failure here is a portability finding to fix,
-  # not a broken build. Make it blocking once a platform passes.
+  # Per-platform evidence (docs/ROADMAP.md, "proven per platform"): the build and the standard
+  # tests on macOS and Windows. Blocking since both passed (2026-11-15). This does not cover
+  # the native PyO3 migration on these platforms; that path is validated on Linux only.
   portability:
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
