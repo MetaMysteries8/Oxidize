@@ -50,6 +50,14 @@ In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
    coverage limits in JSON and Markdown.
 3. §3: versioned event history and a checkpoint schema-upgrade strategy that preserves v0.1.0
    sessions.
+4. **Container sandbox validation:** run the sandboxed native demo with
+   `execution.sandbox = "podman"` (or `"docker"`) and a toolchain image pinned by digest;
+   fix whatever breaks (likely candidates: the offline Cargo registry inside the image,
+   PyO3 finding the image's Python, and Podman's SELinux volume labels). The backend is
+   implemented and unit-tested (`crates/oxidize-core/src/process.rs`), but no engine has
+   run it yet. Installing Podman or Docker needs the owner's yes; vet it first.
+5. **Windows:** the portability gate (`cargo check --target x86_64-pc-windows-msvc`) and
+   proof on a real Windows host. See [ROADMAP.md](ROADMAP.md#platforms-portable-by-construction-proven-per-platform).
 
 The long-term direction, beyond this milestone: more source languages (JavaScript/TypeScript
 and Go first, per [ROADMAP.md](ROADMAP.md)), then whole programs. The goal is almost any
@@ -123,3 +131,4 @@ language to Rust.
 - 2026-11-15 · Claude · Review of 3dc4157..1ae8d68: checks pass (34 passed, 0 failed); exact comparison stays the default; limits documented. Fixed: README credit now names the owner; the tip request is copyable text, since GitHub strips `solana:` links.
 - 2026-11-15 · Claude, for Hype Agent (its ChatGPT usage ran out mid-CRAB OUT) · Wrap-up: tree clean and in sync with origin at 6ec0662; checks pass (fmt, Clippy -D warnings, 34 passed / 0 failed / 6 opt-in ignored); nothing in progress. Next: pick from "Next up" above.
 - 2026-11-15 · Claude · §4 Bubblewrap validation done (ticked, with evidence in VERIFICATION.md): the full native demo passes in the sandbox without --trust-code. Fixed two blockers: /etc/alternatives mounted for `cc`, and refusing commands whose host binary the sandbox can't see (it was silently swapping Python 3.13 for 3.14).
+- 2026-11-15 · Claude · Pluggable sandbox backends (auto/bubblewrap/podman/docker): containers locked down and digest-pinned, implemented and unit-tested, not yet run against a real engine. Platform plan written into ROADMAP.md. Next up #4 and #5 added.

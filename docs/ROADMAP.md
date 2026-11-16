@@ -37,4 +37,22 @@ Milestone two is in progress. Its first slice adds disposable validation copies,
 - Large-repository incremental indexing/cache and terminal dashboard with actual metrics.
 - External-agent discovery/invocation tests and live-model migrations gated behind explicit opt-in credentials.
 
+## Platforms: portable by construction, proven per platform
+
+A port that must run on Windows (or macOS) can't be proven in a Linux sandbox: a Linux
+container builds a Linux module, and paths, line endings, file locking, encodings and process
+handling all differ. Even the *original* Python behaves differently. So:
+
+- **Sandboxes:** `execution.sandbox` already selects Bubblewrap, Podman or Docker (`auto` by
+  default). The container backend still needs validating against a real engine with a
+  digest-pinned toolchain image, on Linux first.
+- **A portability gate:** for ports marked as needing Windows, run
+  `cargo check --target x86_64-pc-windows-msvc` inside the Linux sandbox and reject ports
+  that use Unix-only APIs or crates. It's cheap and catches compile breakage early. PyO3's
+  `abi3` + `generate-import-lib` can cross-build a `.pyd`, but building isn't testing.
+- **Proof on the target:** run the same independent tests, differential cases and
+  benchmarks on a real Windows host (a Windows CI runner, Windows Sandbox, a VM, or the
+  user's machine), and record the platform with every piece of evidence.
+- **The rule:** never claim a platform whose tests didn't run on that platform.
+
 Do not create empty crates for these features or mark them complete because a command name exists.

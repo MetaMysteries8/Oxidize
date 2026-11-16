@@ -8,6 +8,8 @@
 
 ### Sandbox validation
 
+- Pluggable sandbox backends: `execution.sandbox = auto | bubblewrap | podman | docker`. `auto` picks Bubblewrap on Linux when it works, then Podman, then Docker, and never falls back silently. Containers require an image pinned by digest, and run with no network, a read-only root, all capabilities dropped and optional cgroup limits. They are always removed after a run. The container backend is unit-tested but **not yet validated against a real engine**.
+
 - Validated the complete native demo inside Bubblewrap without `--trust-code` on an Ubuntu host with user namespaces (see [verification](docs/VERIFICATION.md#sandboxed-native-demo)).
 - Mount `/etc/alternatives` read-only in the sandbox: Debian/Ubuntu resolve `cc` through it, and without it every build script failed with "linker `cc` not found".
 - Refuse a sandboxed command whose host executable lies outside every mount, instead of silently running a different one on the sandbox's `PATH` (a Conda `python3` was being replaced by a system Python of another version).

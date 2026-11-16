@@ -21,3 +21,30 @@ The process environment is reduced to relevant toolchain variables; provider cre
 Known credential filenames/directories are excluded from snapshots and source discovery; this is not a secret scanner and cannot find arbitrary embedded credentials. Symlinks, files over 16 MiB, snapshots over 512 MiB and more than 100,000 source files are rejected. Python indexing is currently limited to a 100 KiB path list. Session state and internal workspaces assume the invoking user controls `.oxidize/`; do not share it writable with untrusted users/processes. Editing checkpoint JSON is not a supported API.
 
 Report security issues privately through the repository owner's GitHub contact options. Do not include credentials, private source, or exploit-bearing artifacts in public issues.
+
+## Sandbox backends
+
+`execution.sandbox` chooses the isolation for builds and tests:
+
+| Value | Uses |
+|---|---|
+| `auto` (default) | Bubblewrap on Linux if it can create a sandbox there, otherwise Podman, otherwise Docker. Refuses to run if none is usable. |
+| `bubblewrap` | Linux only. |
+| `podman` / `docker` | Any platform with the engine running. Podman is preferred under `auto`: it runs rootless, while membership of the `docker` group is equivalent to root. |
+
+It never falls back silently: an explicit choice that isn't usable is an error.
+
+**Containers** need `execution.image`: an image **pinned by digest** (`name@sha256:…`; tags are refused) that contains the Rust and Python toolchains and the project's dependencies, available offline. Each run gets no network, a read-only root filesystem with a private `/tmp`, every capability dropped, `no-new-privileges`, only the workspace mounted writable (owned by your user: `--user` on Docker, `--userns=keep-id` on Podman), and optional cgroup limits (`memory_mb`, `pids_limit`, `cpus`). Every container is named and removed after the run, including after a timeout, because killing the engine client doesn't stop its container.
+
+```toml
+[execution]
+sandbox = "podman"
+image = "ghcr.io/you/oxidize-toolchain@sha256:<digest>"
+memory_mb = 4096
+pids_limit = 512
+cpus = 2.0
+```
+
+**Status:** the container backend is implemented and its command line is unit-tested, but **it has not been validated against a real engine yet.** No Docker or Podman was available on the validation host. Treat it as experimental until the native demo has passed in a container.
+
+**Windows:** containers on Windows run Linux, so they can verify a port's behaviour but build a Linux module. A port that must work on Windows still needs its native build and its tests run on Windows (see [the roadmap](docs/ROADMAP.md)). Evidence from a Linux container is never a Windows claim.

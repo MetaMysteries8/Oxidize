@@ -139,6 +139,16 @@ pub struct ExecutionConfig {
     pub read_only_paths: Vec<PathBuf>,
     /// Cargo must use a pre-populated cache in the isolated default mode.
     pub offline: bool,
+    /// Which isolation runs builds and tests. `auto` picks Bubblewrap on Linux when it
+    /// works there, otherwise Podman, otherwise Docker, and refuses if none is usable.
+    pub sandbox: SandboxKind,
+    /// The container image for Docker/Podman, pinned by digest (`name@sha256:…`), with the
+    /// Rust and Python toolchains and the project's dependencies available offline.
+    pub image: Option<String>,
+    /// Container-only resource limits. Bubblewrap has none (see SECURITY.md).
+    pub memory_mb: Option<u64>,
+    pub pids_limit: Option<u64>,
+    pub cpus: Option<f64>,
 }
 impl Default for ExecutionConfig {
     fn default() -> Self {
@@ -147,8 +157,24 @@ impl Default for ExecutionConfig {
             output_limit_bytes: 1_048_576,
             read_only_paths: vec![],
             offline: true,
+            sandbox: SandboxKind::Auto,
+            image: None,
+            memory_mb: None,
+            pids_limit: None,
+            cpus: None,
         }
     }
+}
+
+/// The isolation backend for builds and tests (`--trust-code` bypasses all of them).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxKind {
+    #[default]
+    Auto,
+    Bubblewrap,
+    Docker,
+    Podman,
 }
 impl Config {
     pub fn load(root: &Path) -> Result<Self> {
@@ -219,6 +245,16 @@ impl Config {
                 .iter()
                 .all(|p| p.is_absolute()),
             "read_only_paths must be absolute host paths"
+        );
+        if let Some(image) = &self.execution.image {
+            ensure!(
+                image.contains("@sha256:"),
+                "execution.image must be pinned by digest (name@sha256:…), not a tag that can change: {image}"
+            );
+        }
+        ensure!(
+            self.execution.cpus.is_none_or(|c| c > 0.0) && self.execution.memory_mb != Some(0),
+            "execution.cpus and execution.memory_mb must be positive"
         );
         ensure!(self.max_repairs <= 10, "max_repairs exceeds 10");
         ensure!(
