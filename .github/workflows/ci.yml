@@ -36,4 +36,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: cargo build --locked --workspace
-      - run: cargo test --locked --workspace
+      # --no-fail-fast: report every platform finding, not just the first failing test binary.
+      - run: cargo test --locked --workspace --no-fail-fast
