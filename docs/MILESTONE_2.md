@@ -17,7 +17,7 @@ Acceptance: deterministic sampler/policy tests cover invalid/insufficient data, 
 
 - [x] Compare supported argument mutation alongside current typed returns, errors, stdout and stderr.
 - [x] Add explicit opt-in normalization/tolerance policies with exact comparison remaining the default.
-- [ ] Add controlled file-effect fixtures and comparisons with clear scope; record external effects that remain unverified.
+- [x] Add controlled file-effect fixtures and comparisons with clear scope; record external effects that remain unverified. Evidence: in Bubblewrap without `--trust-code`, a compiled PyO3 candidate writing `wrong` instead of `first` (`fixtures/python-file-effects/migration-response-wrong-bytes.json`) passes the independent tests and is rejected ("case 1: configured file effects differ"); the corrected replay (`migration-response.json`) in the same session is accepted ([verification](VERIFICATION.md#native-file-effect-demo)).
 - [x] Keep existing independent tests separate from generated tests and make case provenance/coverage limits visible in JSON and Markdown. Evidence: each attempt records `provenance` (cases file, its SHA-256, project-supplied case count, `generated_cases` (0: Oxidize generates none yet), and the independent test command) in `state.json`/`report.json`; the Markdown report states it with the coverage limit (engine unit test; sandboxed demo report). When case generation is added, it must increment `generated_cases` and keep its cases separate.
 
 Acceptance: a compilable candidate that passes existing tests but changes an observed mutation, error, return type or configured file effect is rejected. Intentional tolerance/normalization is tested without masking unrelated changes.
@@ -67,9 +67,9 @@ compiled PyO3 candidate or a sandboxed Cargo build.
 bounded before/after presence, size and SHA256 evidence, compared exactly and
 reported with their limits. Sandboxed Python fixtures prove creation/change/
 deletion/error-path capture and reject a same-length byte mismatch despite
-passing independent tests; malformed/legacy evidence fails closed. The full
-file-effect checkbox above remains open pending a compiled native-candidate
-acceptance/rejection demonstration. This does not observe unlisted/transient/
+passing independent tests; malformed/legacy evidence fails closed. The compiled
+native-candidate rejection and corrected replay were demonstrated on 2026-11-15,
+closing the checkbox. This does not observe unlisted/transient/
 import-time writes, metadata or external systems.
 
 ## Deferred

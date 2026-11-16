@@ -6,6 +6,13 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### Evidence context and provenance
+
+- Every measurement records the interpreter (from inside the run), rustc, OS/arch, isolation backend, command, sampling policy, acceptance threshold and scope, and the report states them.
+- Every attempt records where its behaviour cases came from (file, SHA-256, project vs generated counts) and the independent test command, with the coverage limit in the report. Older sessions load and say these weren't recorded.
+- Native file-effect demo: a compiled candidate that passes the independent tests but writes different bytes is rejected in the sandbox; the corrected replay is accepted.
+- Tests pin explicit authorization for provider transmission and extra host mounts.
+
 ### Sandbox validation
 
 - Pluggable sandbox backends: `execution.sandbox = auto | bubblewrap | podman | docker`. `auto` picks Bubblewrap on Linux when it works, then Podman, then Docker, and never falls back silently. Containers require an image pinned by digest, and run with no network, a read-only root, all capabilities dropped and optional cgroup limits. They are always removed after a run. The container backend is unit-tested but **not yet validated against a real engine**.

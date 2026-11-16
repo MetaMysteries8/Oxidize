@@ -152,3 +152,24 @@ Two problems found and fixed during validation:
 
 Not covered: cgroup resource limits, CI (its environment rejects user namespaces), and
 non-Ubuntu hosts.
+
+## Native file-effect demo
+
+Validated 2026-11-15 on Ubuntu (Bubblewrap, no `--trust-code`, CPython 3.14.4, rustc 1.100.0).
+Copy `fixtures/python-file-effects` to a working directory, add the sandbox's toolchain mounts
+from [the sandboxed native demo](#sandboxed-native-demo) (`[execution] read_only_paths`), then:
+
+```sh
+oxidize analyze DIR && oxidize plan DIR
+oxidize --allow-host-paths migrate DIR --component effects.py:record \
+  --response fixtures/python-file-effects/migration-response-wrong-bytes.json
+# rejected: "differential mismatch: case 1: configured file effects differ"
+oxidize --allow-host-paths migrate DIR --component effects.py:record \
+  --response fixtures/python-file-effects/migration-response.json
+# Accepted attempt 2
+```
+
+The wrong candidate writes `wrong\0\xff` instead of `first\0\xff`: same length, and it passes
+`test_effects.py`, which checks only the return values and errors. Only the configured
+file-effect comparison catches it. Scope: only the listed files are observed. Unlisted,
+transient or import-time writes, metadata and external systems remain unverified.

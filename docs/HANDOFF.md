@@ -3,17 +3,21 @@
 Where the work stands, for whoever picks it up next. Keep this current: update it when you
 claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS.md)).
 
-**Last updated:** 2026-11-15, by Ferriscope (GPT-6.1 Sol).
+**Last updated:** 2026-11-15, by Claude.
 
 ## State
 
 - **`main`:** v0.1.1, the Working Foundation (Python/PyO3 path). Tagged releases are immutable.
 - **Working branch:** `milestone-2-performance-reliability`, toward v0.2.0. The plan and its
   checklist are in [MILESTONE_2.md](MILESTONE_2.md).
-- **Done on the branch** (6ad68b3, ticked in MILESTONE_2.md with evidence):
+- **Done on the branch** (ticked in MILESTONE_2.md with evidence; 9/20 as of cdcd7df+):
   - behaviour observation separated from timing (§1)
   - argument-mutation comparison (§2)
   - baseline tests run in disposable validation copies (§3)
+  - comparison policies, file effects (native demo), case provenance (§2)
+  - measurement context incl. interpreter and rustc (§1)
+  - Bubblewrap validation, explicit authorization (§4)
+- **CI:** Linux (fmt, Clippy, tests, native PyO3 tests) plus blocking macOS/Windows build+tests.
 - **Baseline, 2026-11-15** (Linux, Rust 1.100.0, Python 3.13): `cargo build --locked
   --workspace` OK, `cargo test --locked --workspace` gave 20 passed, 0 failed, 3 ignored (the
   opt-in real PyO3 tests).
@@ -28,7 +32,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 - **Controlled file-effect observation slice:** opt-in bounded regular-file
   snapshots and exact comparisons are implemented. Config/comparator/report
   tests and sandboxed Python observation fixtures pass. The full §2 checklist
-  item remains open until native acceptance/rejection evidence exists.
+  item is now ticked: the native rejection and replay were demonstrated 2026-11-15.
 
 ## In progress
 
@@ -40,23 +44,15 @@ Claim work here: `- <who> · <what> · <date started>`
 
 In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
 
-1. §2: finish the controlled file-effect gate with a compiled native candidate
-   that passes independent tests but changes a configured file effect; demonstrate
-   rejection and successful corrected-code replay inside the sandbox. Capture/
-   comparison/reporting are already implemented; don't duplicate them. **Unblocked:** the
-   sandboxed native flow now works. Follow the configuration in
-   [VERIFICATION.md#sandboxed-native-demo](VERIFICATION.md#sandboxed-native-demo).
-2. §2: keep existing independent tests separate from generated ones; show case provenance and
-   coverage limits in JSON and Markdown.
-3. §3: versioned event history and a checkpoint schema-upgrade strategy that preserves v0.1.0
+1. §3: versioned event history and a checkpoint schema-upgrade strategy that preserves v0.1.0
    sessions.
-4. **Container sandbox validation:** run the sandboxed native demo with
+2. **Container sandbox validation:** run the sandboxed native demo with
    `execution.sandbox = "podman"` (or `"docker"`) and a toolchain image pinned by digest;
    fix whatever breaks (likely candidates: the offline Cargo registry inside the image,
    PyO3 finding the image's Python, and Podman's SELinux volume labels). The backend is
    implemented and unit-tested (`crates/oxidize-core/src/process.rs`), but no engine has
    run it yet. Installing Podman or Docker needs the owner's yes; vet it first.
-5. **Windows:** the portability gate (`cargo check --target x86_64-pc-windows-msvc`) and
+3. **Windows:** the portability gate (`cargo check --target x86_64-pc-windows-msvc`) and
    proof on a real Windows host. See [ROADMAP.md](ROADMAP.md#platforms-portable-by-construction-proven-per-platform).
 
 The long-term direction, beyond this milestone: more source languages (JavaScript/TypeScript
@@ -73,10 +69,6 @@ language to Rust.
 - Review/decide later whether additional normalization scopes are wanted.
   This slice intentionally does not normalize returned strings, exception
   messages, import output, argument snapshots, dictionary keys or order.
-- The new file-effect slice does not run a compiled PyO3 candidate. Keep the
-  full §2 box open until that evidence is available, preferably alongside §4's
-  sandboxed native build/test flow. Don't silently add `--trust-code` to get
-  the demonstration through.
 
 ## Handoff history
 
@@ -138,3 +130,4 @@ language to Rust.
 - 2026-11-15 · Claude · §1 "record the context with every measurement" done (ticked): interpreter from inside the run, plus OS/arch, isolation, command, policy, threshold and scope, in the evidence JSON and as a report line. Gap: the rustc version is not recorded yet.
 - 2026-11-15 · Claude · §4 "explicit authorization" ticked, with tests for provider transmission, host mounts, and no silent isolation fallback.
 - 2026-11-15 · Claude · §2 "case provenance" ticked: per-attempt provenance in JSON + a report paragraph with the coverage limit. Milestone 2 is now 8/20.
+- 2026-11-15 · Claude · §2 native file-effect demo done (ticked): wrong-bytes PyO3 candidate rejected in Bubblewrap, corrected replay accepted; answer files added to the fixture. Also recorded rustc per measurement. Milestone 2: 9/20. Tree clean, pushed, nothing in progress.

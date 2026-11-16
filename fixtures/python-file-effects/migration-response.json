@@ -1,0 +1,3 @@
+{
+  "rust": "use pyo3::exceptions::PyValueError;\nuse pyo3::prelude::*;\nuse std::fs;\n\n#[pyfunction]\nfn record(action: &str) -> PyResult<i64> {\n    let path = \"artifact.bin\";\n    match action {\n        \"create\" => fs::write(path, b\"first\\x00\\xff\")?,\n        \"change\" => fs::write(path, b\"second\\r\\n\")?,\n        \"delete\" => fs::remove_file(path)?,\n        \"error\" => {\n            fs::write(path, b\"failed\\n\")?;\n            return Err(PyValueError::new_err(\"after write\"));\n        }\n        _ => {}\n    }\n    Ok(1)\n}\n\n#[pymodule]\nfn _oxidize_27730f947f0d(m: &Bound<'_, PyModule>) -> PyResult<()> {\n    m.add_function(wrap_pyfunction!(record, m)?)?;\n    Ok(())\n}\n"
+}
