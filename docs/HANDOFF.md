@@ -3,14 +3,14 @@
 Where the work stands, for whoever picks it up next. Keep this current: update it when you
 claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS.md)).
 
-**Last updated:** 2026-11-16, by Claude.
+**Last updated:** 2026-11-17, by Claude.
 
 ## State
 
-- **`main`:** v0.1.1, the Working Foundation (Python/PyO3 path). Tagged releases are immutable.
-- **Working branch:** `milestone-2-performance-reliability`, toward v0.2.0. The plan and its
-  checklist are in [MILESTONE_2.md](MILESTONE_2.md).
-- **Done on the branch** (ticked in MILESTONE_2.md with evidence; **20/20, complete**):
+- **`main`:** v0.2.0, Performance and Reliability (Python/PyO3 path). Earlier releases: v0.1.0,
+  v0.1.1. Tagged releases are immutable.
+- **Working branch:** none yet. Start Milestone 3 on a new branch off `main` once it is planned.
+- **Milestone 2, released in v0.2.0** ([MILESTONE_2.md](MILESTONE_2.md), 20/20 with evidence):
   - behaviour observation separated from timing (§1)
   - argument-mutation comparison (§2)
   - baseline tests run in disposable validation copies (§3)
@@ -25,9 +25,9 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
   - report summary/status for every outcome, tested; report.json stays versioned (§5)
   - docs updated to verified capabilities only; completion gate passed (§5)
 - **CI:** Linux (fmt, Clippy, tests, native PyO3 tests) plus blocking macOS/Windows build+tests.
-- **Baseline, 2026-11-16** (Linux, Rust 1.100.0): fmt and Clippy clean; `cargo test --locked
-  --workspace` 77 passed, 0 failed, 10 ignored (opt-in native); with `--include-ignored`, 87
-  passed. CI green on Linux, macOS and Windows.
+- **Baseline, 2026-11-17** (Linux, Rust 1.100.0): fmt and Clippy clean; `cargo test --locked
+  --workspace` 80 passed, 0 failed, 10 ignored (opt-in native). The completion gate, before the
+  PR #1 review fixes, gave 87 passed with `--include-ignored`. CI green on Linux, macOS and Windows.
 - **Host note for §4:** Bubblewrap user-namespace sandboxes work on the owner's Ubuntu machine,
   even with `apparmor_restrict_unprivileged_userns=1`. That machine can validate the
   sandboxed build/test flow.
@@ -49,9 +49,11 @@ Claim work here: `- <who> · <what> · <date started>`
 
 ## Next up (unclaimed)
 
-In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
+In rough order:
 
-1. **Owner:** review the branch, then merge to `main` and tag v0.2.0 (not done by agents).
+1. **Plan Milestone 3** (more source languages, JavaScript/TypeScript and Go first, per
+   [ROADMAP.md](ROADMAP.md)): write `docs/MILESTONE_3.md` with an acceptance checklist, like
+   Milestone 2's, before implementing anything.
 2. **Container sandbox validation:** run the sandboxed native demo with
    `execution.sandbox = "podman"` (or `"docker"`) and a toolchain image pinned by digest;
    fix whatever breaks (likely candidates: the offline Cargo registry inside the image,
@@ -61,7 +63,10 @@ In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
 3. **Windows:** the portability gate (`cargo check --target x86_64-pc-windows-msvc`) and
    proof on a real Windows host. See [ROADMAP.md](ROADMAP.md#platforms-portable-by-construction-proven-per-platform).
 
-The long-term direction, beyond this milestone: more source languages (JavaScript/TypeScript
+4. **ACP provider** (planned in ROADMAP.md): drive the user's own coding agent over the Agent
+   Client Protocol, with no write or terminal permissions for the agent.
+
+The long-term direction: more source languages (JavaScript/TypeScript
 and Go first, per [ROADMAP.md](ROADMAP.md)), then whole programs. The goal is almost any
 language to Rust.
 
@@ -148,3 +153,4 @@ language to Rust.
 - 2026-11-16 · Claude · §5 report items: summary + status wording, report tests for rejected/interrupted/accepted/rolled-back/new sessions (4 passed).
 - 2026-11-16 · Claude · Milestone 2 complete (20/20). Docs pass done (README, ROADMAP incl. planned ACP provider, skill reference, CHANGELOG). Completion gate: fmt/Clippy clean, 77 standard, 87 with every opt-in native test, sandboxed demo passed (component 247.6x, `main.py 30000` wall 1.475x in Bubblewrap). Also fixed the Windows CI break from the repair refactor (build-stage tests now Linux/macOS only, plus an explicit-refusal test elsewhere). Nothing in progress. Next: owner review, merge and v0.2.0 tag.
 - 2026-11-17 · Claude · Fixed Codex's two P2 findings on PR #1: bounded, limit-enforced workload stderr (was fully buffered); native library name chosen by the build backend, not the host OS. Tests first (both failed before). Standard 80 passed; real migration test passed.
+- 2026-11-17 · Claude · Release prep for v0.2.0 (owner authorized the release): version 0.2.0, dated changelog, docs moved from "development branch" to released, and a stale skill line about interleaving fixed. PR #2, then the annotated tag `v0.2.0` and the first GitHub Release.
