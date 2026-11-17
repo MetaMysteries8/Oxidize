@@ -74,6 +74,11 @@ pub enum EventKind {
         attempt: usize,
         restored: Option<usize>,
     },
+    /// `workloads` whole-application workloads were timed against accepted `attempt`.
+    WorkloadsMeasured {
+        attempt: usize,
+        workloads: usize,
+    },
 }
 
 impl EventKind {
@@ -85,7 +90,8 @@ impl EventKind {
             | Self::PhaseChanged { attempt, .. }
             | Self::Accepted { attempt, .. }
             | Self::Rejected { attempt, .. }
-            | Self::RolledBack { attempt, .. } => Some(*attempt),
+            | Self::RolledBack { attempt, .. }
+            | Self::WorkloadsMeasured { attempt, .. } => Some(*attempt),
         }
     }
 }

@@ -254,3 +254,48 @@ Limits: a crash is simulated in-process, at the points listed. A real `SIGKILL` 
 system calls inside one step isn't covered, except that `state.json` changes only by atomic
 rename. Validation copies left by a real kill stay under `.oxidize/validation/`. Archived
 `interrupted-*` runs are kept for inspection and are not cleaned up automatically.
+
+## Interleaved measurement and application workloads
+
+Milestone 2 §1. A candidate whose behaviour matches is timed against the original in
+`performance.rounds` interleaved rounds (default 3), alternating which side goes first. Each
+side runs in a fresh process and validation copy, with the same `warmup` and fresh inputs for
+every call. All raw samples are kept in the attempt's `measurement` in `state.json`/`report.json`.
+`sampling::decide` gives either a speedup estimate (the median of per-round speedups) with
+its range, or **inconclusive** when there are no rounds, too few samples, a missing, zero or
+non-finite timing, rounds out of order, or a round noisier than `max_relative_mad` (default
+0.25). Acceptance needs the *slowest* round to reach `minimum_speedup`. An inconclusive
+measurement is never accepted, and the report then says "Speed: **no claim**".
+
+`[[performance.workloads]]` (name + command) and `oxidize workloads` time whole-application
+commands on the original and the accepted workspace, in the same interleaved rounds. A small
+Python wrapper inside the sandbox runs each command. It records wall time, and, where Python's
+`resource` module exists (Linux, macOS), CPU time and peak RSS of that run's process tree.
+Elsewhere those are listed as unsupported, never left blank. Results are kept in the checkpoint
+(`workloads`) and reported.
+
+Evidence:
+
+- Unit tests (`sampling.rs`, `workloads.rs`): the order alternates; steady rounds give the
+  estimate and range, and the slowest round decides acceptance. Empty, short, zero, NaN and
+  infinite data, rounds out of order and noisy rounds are inconclusive and can't clear any
+  threshold. Unsupported CPU/RSS is named in the report.
+- Config tests (`sampling_config.rs`): defaults for old configs and checkpoints, range
+  checks, and workload names and commands validated.
+- Wrapper tests (`tests/workloads.rs`): a real child that holds an 80 MiB buffer reports three
+  timed runs, positive CPU and a peak RSS of at least 80 MiB. A failing command is an error, not
+  a timing.
+- Opt-in real PyO3 test `real_migration_rejection_resume_and_rollback`: the accepted
+  `count_primes` migration was decided by 3 interleaved rounds of 7 samples per side, and
+  `oxidize workloads` timed `python3 main.py 30000` on the original and the accepted
+  workspace. On the owner's Linux machine on 2026-11-16 that measured wall time **1.97x**
+  (range 1.89x to 2.10x) and CPU time 1.99x (range 1.90x to 2.11x). That is one host's figure
+  for one command, not a general speed claim, and the test asserts only the structure, never a
+  speedup.
+
+Limits: rounds run back to back on one machine; interleaving reduces drift but not contention
+from other load. Ranges are min/max over a few rounds, not statistical confidence intervals.
+Peak RSS is the largest single process (across warm-up and timed runs), not a total. CPU
+time is the process tree's user + system time as the OS accounts it, which can be coarse for
+very short runs (such rounds tend to come out inconclusive). Workloads need an accepted
+workspace, and their commands run in the same sandbox as tests.

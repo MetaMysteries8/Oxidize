@@ -318,6 +318,9 @@ fn sandbox_does_not_silently_fall_back_to_trusted_execution() {
 fn real_migration_rejection_resume_and_rollback() {
     let dir = project();
     let root = dir.path().join("app");
+    let mut config = fs::read_to_string(root.join("oxidize.toml")).unwrap();
+    config += "\n[[performance.workloads]]\nname = \"cli-30000\"\ncommand = [\"python3\", \"main.py\", \"30000\"]\n";
+    fs::write(root.join("oxidize.toml"), config).unwrap();
     let original = fingerprint(&root).unwrap();
     let response = fixture().join("migration-response.json");
     let mut session = Session::open(&root).unwrap();
@@ -327,6 +330,29 @@ fn real_migration_rejection_resume_and_rollback() {
     assert_eq!(session.state.current, Some(1));
     assert_eq!(session.state.attempts[0].phase, Phase::Accepted);
     assert!(session.state.attempts[0].speedup.unwrap() >= 1.0);
+    // §1: acceptance came from interleaved rounds whose raw samples are kept.
+    let measurement = session.state.attempts[0].measurement.clone().unwrap();
+    assert_eq!(measurement.rounds.len(), 3);
+    for (i, round) in measurement.rounds.iter().enumerate() {
+        assert_eq!(round.order, oxidize_engine::sampling::order(i));
+        assert_eq!(round.original_ns.len(), 7);
+        assert_eq!(round.candidate_ns.len(), 7);
+    }
+    assert!(measurement.verdict.clears(1.0), "{:?}", measurement.verdict);
+    // §1: a whole-application workload, original vs accepted, with CPU and peak RSS.
+    let run = session.run_workloads(true).unwrap().clone();
+    assert_eq!(run.against, 1);
+    let result = &run.results[0];
+    assert_eq!(result.name, "cli-30000");
+    assert_eq!(result.rounds.len(), 3);
+    for round in &result.rounds {
+        for side in [&round.original, &round.candidate] {
+            assert_eq!(side.wall_ns.len(), 7);
+            assert_eq!(side.cpu_ns.as_ref().unwrap().len(), 7);
+            assert!(side.peak_rss_kib.unwrap() > 0);
+        }
+    }
+    eprintln!("workload: wall {:?}, cpu {:?}", result.wall, result.cpu);
     session.verify(true).unwrap();
     assert_eq!(fingerprint(&root).unwrap(), original);
     let report = session.report().unwrap();
@@ -334,6 +360,12 @@ fn real_migration_rejection_resume_and_rollback() {
         fs::read_to_string(report)
             .unwrap()
             .contains("coverage: **unknown**")
+    );
+    let text = fs::read_to_string(session.directory.join("report.md")).unwrap();
+    assert!(text.contains("interleaved round(s)"), "{text}");
+    assert!(
+        text.contains("- `cli-30000` (`python3 main.py 30000`): wall time"),
+        "{text}"
     );
     session.rollback().unwrap();
     assert!(session.state.current.is_none());

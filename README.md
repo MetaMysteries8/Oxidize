@@ -114,7 +114,14 @@ test_command = ["python3", "-m", "unittest", "discover", "-v"]
 iterations = 7
 warmup = 2
 calls_per_sample = 3
-minimum_speedup = 1.0
+minimum_speedup = 1.0      # the slowest interleaved round must reach this
+rounds = 3                 # interleaved original/candidate rounds (development branch)
+max_relative_mad = 0.25    # noisier rounds: "no speed claim", never accepted
+
+# Optional whole-application workloads for `oxidize workloads` (development branch)
+# [[performance.workloads]]
+# name = "cli-30000"
+# command = ["python3", "main.py", "30000"]
 
 [execution]
 timeout_seconds = 180

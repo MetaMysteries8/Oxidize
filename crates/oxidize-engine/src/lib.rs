@@ -18,10 +18,14 @@ use std::{
 mod comparison;
 mod faults;
 mod history;
+pub mod sampling;
+pub mod workloads;
 use comparison::{differential_mismatch, has_argument_evidence, has_file_effect_evidence};
 pub use comparison::{equivalent, equivalent_with_policy};
 pub use faults::{Fault, FaultPoint, InjectedCrash, InjectedFailure};
 pub use history::{CHECKPOINT_SCHEMA_VERSION, EVENT_SCHEMA_VERSION, Event, EventKind};
+use sampling::{Measurement, Round, Side, Verdict};
+use workloads::{WorkloadRound, WorkloadRun, WorkloadSide};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -147,6 +151,10 @@ pub struct Attempt {
     /// Where the behaviour cases and independent tests came from. Missing in older sessions.
     #[serde(default)]
     pub provenance: Option<CaseProvenance>,
+    /// The interleaved original/candidate timing that decided acceptance, with raw samples.
+    /// Missing in older sessions, whose speedup compared two separate single runs.
+    #[serde(default)]
+    pub measurement: Option<Measurement>,
 }
 
 /// Milestone 2 §2: which evidence the project supplied and which Oxidize made up. Today every
@@ -183,6 +191,50 @@ pub fn provenance_line(provenance: Option<&CaseProvenance>) -> String {
         }
     }
 }
+/// The report's speed paragraph: what was measured, how, and what it does and doesn't show.
+pub fn measurement_paragraph(
+    measurement: Option<&Measurement>,
+    legacy_speedup: Option<f64>,
+    minimum: f64,
+) -> String {
+    let Some(m) = measurement else {
+        return match legacy_speedup {
+            Some(s) => format!(
+                "Measured component workload speedup: **{s:.3}x** (legacy: two separate, non-interleaved runs; no uncertainty recorded). Includes Python/FFI call overhead; not a whole-application speedup.\n\n"
+            ),
+            None => String::new(),
+        };
+    };
+    let per_round: Vec<String> = m
+        .rounds
+        .iter()
+        .map(|r| {
+            format!(
+                "{:.3}x",
+                sampling::median(&r.original_ns) / sampling::median(&r.candidate_ns)
+            )
+        })
+        .collect();
+    let policy = format!(
+        "{} interleaved round(s), alternating which side runs first, each side in a fresh process with the same warm-up and fresh inputs; at least {} samples per side per round; relative MAD at most {}",
+        m.rounds.len(),
+        m.minimum_samples,
+        m.max_relative_mad
+    );
+    match &m.verdict {
+        Verdict::Measured {
+            estimate,
+            low,
+            high,
+        } => format!(
+            "Measured component workload speedup: **{estimate:.3}x** (range {low:.3}x to {high:.3}x across rounds: {}). {policy}. Acceptance needs the slowest round to reach {minimum}x. Includes Python/FFI call overhead; not a whole-application speedup. Raw samples are in `report.json`.\n\n",
+            per_round.join(", ")
+        ),
+        Verdict::Inconclusive { reason } => format!(
+            "Speed: **no claim**. The measurement was inconclusive: {reason}. {policy}. Raw samples are in `report.json`.\n\n"
+        ),
+    }
+}
 /// The report's history paragraph: the checkpoint schema, how many events, and any upgrade gap.
 pub fn history_line(state: &State) -> String {
     let upgrades: Vec<String> = state
@@ -216,6 +268,9 @@ pub struct State {
     pub attempts: Vec<Attempt>,
     /// Every state change, saved atomically with it. Starts at the upgrade for older sessions.
     pub events: Vec<Event>,
+    /// Whole-application workload runs (`oxidize workloads`), oldest first.
+    #[serde(default)]
+    pub workloads: Vec<WorkloadRun>,
 }
 pub struct Session {
     pub root: PathBuf,
@@ -281,6 +336,7 @@ impl Session {
                 current: None,
                 attempts: vec![],
                 events: vec![],
+                workloads: vec![],
             };
             state.record(EventKind::SessionCreated);
             atomic_json(&state_path, &state)?;
@@ -427,6 +483,7 @@ impl Session {
             error: None,
             repaired: 0,
             provenance: None,
+            measurement: None,
         });
         self.state.record(EventKind::AttemptStarted {
             attempt: id,
@@ -620,6 +677,7 @@ impl Session {
         attempt.speedup = None;
         attempt.candidate_fingerprint = None;
         attempt.repaired = 0;
+        attempt.measurement = None;
         self.set_phase(id, Phase::Prepared)?;
 
         // Tests and observations happen before asking a provider for implementation.
@@ -780,20 +838,33 @@ impl Session {
         self.set_phase(id, Phase::Verifying)?;
         self.check_tests(id, &project, "integrated tests", trust)?;
         let candidate = self.evidence(&project, &component, &cases, trust)?;
-        let speedup = baseline.benchmark.median_ns / candidate.benchmark.median_ns;
         self.state.attempts[id - 1].candidate = Some(candidate.clone());
-        self.state.attempts[id - 1].speedup = Some(speedup);
         self.save()?;
         if let Some(reason) =
             differential_mismatch(&baseline, &candidate, &config.verification.comparison)
         {
             bail!("differential mismatch: {reason}");
         }
-        ensure!(
-            speedup.is_finite() && speedup >= config.performance.minimum_speedup,
-            "measured speedup {speedup:.3}x is below required {:.3}x",
-            config.performance.minimum_speedup
-        );
+        // Behaviour matches; only now is speed worth measuring, both sides interleaved.
+        let successful = successful_cases(&cases, &baseline)?;
+        let measurement = self.measure(&base, &project, &component, &successful, trust)?;
+        let verdict = measurement.verdict.clone();
+        self.state.attempts[id - 1].speedup = match verdict {
+            Verdict::Measured { estimate, .. } => Some(estimate),
+            Verdict::Inconclusive { .. } => None,
+        };
+        self.state.attempts[id - 1].measurement = Some(measurement);
+        self.save()?;
+        let minimum = config.performance.minimum_speedup;
+        match verdict {
+            Verdict::Inconclusive { reason } => bail!(
+                "no speed claim can be made ({reason}); acceptance requires a conclusive measurement"
+            ),
+            Verdict::Measured { low, .. } => ensure!(
+                low >= minimum,
+                "slowest round's measured speedup {low:.3}x is below required {minimum:.3}x"
+            ),
+        }
         ensure!(
             fingerprint(&base)? == self.state.attempts[id - 1].source_fingerprint,
             "tests modified baseline files; acceptance refused"
@@ -815,6 +886,49 @@ impl Session {
         }
         self.prune_build_cache(id);
         Ok(())
+    }
+    /// Time original and candidate in interleaved rounds (see [`sampling`]).
+    fn measure(
+        &self,
+        original: &Path,
+        candidate: &Path,
+        c: &Component,
+        successful: &Value,
+        trust: bool,
+    ) -> Result<Measurement> {
+        let performance = &self.state.config.performance;
+        let mut rounds = vec![];
+        for round in 0..performance.rounds {
+            let order = sampling::order(round);
+            let (mut original_ns, mut candidate_ns) = (vec![], vec![]);
+            for side in order {
+                let root = match side {
+                    Side::Original => original,
+                    Side::Candidate => candidate,
+                };
+                let timed: Benchmark = self.harness(root, c, successful, "benchmark", trust)?;
+                match side {
+                    Side::Original => original_ns = timed.samples_ns,
+                    Side::Candidate => candidate_ns = timed.samples_ns,
+                }
+            }
+            rounds.push(Round {
+                order,
+                original_ns,
+                candidate_ns,
+            });
+        }
+        let verdict = sampling::decide(
+            &rounds,
+            performance.iterations,
+            performance.max_relative_mad,
+        );
+        Ok(Measurement {
+            rounds,
+            max_relative_mad: performance.max_relative_mad,
+            minimum_samples: performance.iterations,
+            verdict,
+        })
     }
     fn harness<T: serde::de::DeserializeOwned>(
         &self,
@@ -920,6 +1034,89 @@ impl Session {
         let out = self.test_output(&self.current_workspace(), trust)?;
         require_tests(&out)
     }
+    /// Time every configured whole-application workload on the original and the accepted
+    /// workspace, interleaved, and keep the result in the checkpoint.
+    pub fn run_workloads(&mut self, trust: bool) -> Result<&WorkloadRun> {
+        self.assert_source_unchanged()?;
+        self.assert_base_unchanged()?;
+        let against = self.state.current.context(
+            "no accepted workspace: whole-application workloads compare the original with an accepted migration",
+        )?;
+        let performance = self.state.config.performance.clone();
+        ensure!(
+            !performance.workloads.is_empty(),
+            "no [[performance.workloads]] configured"
+        );
+        let (original, candidate) = (self.workspace(None), self.current_workspace());
+        let mut results = vec![];
+        for w in &performance.workloads {
+            let mut rounds = vec![];
+            for round in 0..performance.rounds {
+                let order = sampling::order(round);
+                let (mut o, mut c) = (None, None);
+                for side in order {
+                    let root = match side {
+                        Side::Original => &original,
+                        Side::Candidate => &candidate,
+                    };
+                    let temporary = self.validation_copy(root)?;
+                    let argv = vec![
+                        self.state.config.python.clone(),
+                        "-I".into(),
+                        "-c".into(),
+                        workloads::WRAPPER.into(),
+                        serde_json::to_string(&w.command)?,
+                        performance.warmup.to_string(),
+                        performance.iterations.to_string(),
+                    ];
+                    let output = Runner {
+                        config: &self.state.config.execution,
+                        trust_code: trust,
+                    }
+                    .run(&temporary.path().join("project"), &argv)?;
+                    let which = match side {
+                        Side::Original => "original",
+                        Side::Candidate => "accepted",
+                    };
+                    output.require_success(&format!(
+                        "workload `{}` on the {which} workspace",
+                        w.name
+                    ))?;
+                    let measured: WorkloadSide = serde_json::from_str(&output.stdout)
+                        .context("decode workload measurement")?;
+                    match side {
+                        Side::Original => o = Some(measured),
+                        Side::Candidate => c = Some(measured),
+                    }
+                }
+                rounds.push(WorkloadRound {
+                    order,
+                    original: o.context("original side missing")?,
+                    candidate: c.context("accepted side missing")?,
+                });
+            }
+            results.push(workloads::summarize(
+                &w.name,
+                &w.command,
+                rounds,
+                performance.iterations,
+                performance.max_relative_mad,
+            ));
+        }
+        self.state.workloads.push(WorkloadRun {
+            against,
+            isolation: oxidize_core::process::isolation_name(&self.state.config.execution, trust),
+            os: std::env::consts::OS.into(),
+            arch: std::env::consts::ARCH.into(),
+            results,
+        });
+        self.state.record(EventKind::WorkloadsMeasured {
+            attempt: against,
+            workloads: performance.workloads.len(),
+        });
+        self.save()?;
+        Ok(self.state.workloads.last().expect("just pushed"))
+    }
     pub fn benchmark(&self, component_id: &str, trust: bool) -> Result<Evidence> {
         self.assert_source_unchanged()?;
         self.assert_base_unchanged()?;
@@ -950,17 +1147,18 @@ impl Session {
             serde_json::to_string(&self.state.config.verification.file_effect_paths)?
         );
         report += &history_line(&self.state);
+        report += &workloads::report_section(&self.state.workloads);
         for a in &self.state.attempts {
             report += &format!(
                 "## Attempt {}: `{}`\n\nStatus: {:?}\n\nCompiler repairs: {}\n\n",
                 a.id, a.component, a.phase, a.repaired
             );
             report += &provenance_line(a.provenance.as_ref());
-            if let Some(speedup) = a.speedup {
-                report += &format!(
-                    "Measured component workload speedup: **{speedup:.3}x** (includes Python/FFI call overhead). This is not a whole-application speedup.\n\n"
-                );
-            }
+            report += &measurement_paragraph(
+                a.measurement.as_ref(),
+                a.speedup,
+                self.state.config.performance.minimum_speedup,
+            );
             for (label, e) in [("Original", &a.baseline), ("Candidate", &a.candidate)] {
                 if let Some(e) = e {
                     report += &format!(
@@ -1020,6 +1218,27 @@ impl Session {
     }
 }
 
+/// The cases that returned (rather than raised) in the original: the timed workload.
+fn successful_cases(cases: &Value, baseline: &Evidence) -> Result<Value> {
+    let cases = cases
+        .as_array()
+        .context("behavior cases must be an array")?;
+    ensure!(
+        cases.len() == baseline.observations.len(),
+        "baseline observations don't match the cases"
+    );
+    let successful: Vec<_> = cases
+        .iter()
+        .zip(&baseline.observations)
+        .filter(|(_, o)| o.get("return").is_some())
+        .map(|(case, _)| case.clone())
+        .collect();
+    ensure!(
+        !successful.is_empty(),
+        "at least one successful workload is required for benchmarking"
+    );
+    Ok(Value::Array(successful))
+}
 fn require_tests(out: &Output) -> Result<()> {
     out.require_success("independent tests")?;
     let combined = format!("{}{}", out.stdout, out.stderr);

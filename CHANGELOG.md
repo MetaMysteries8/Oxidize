@@ -6,6 +6,11 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### Measurement
+
+- Acceptance timing runs original and candidate in interleaved rounds (`performance.rounds`, default 3), alternating which goes first. Raw samples are kept. The slowest round must reach `minimum_speedup`, and noisy, short or malformed timings (`max_relative_mad`, default 0.25) are "no claim" and never accepted.
+- `[[performance.workloads]]` and `oxidize workloads`: whole-application commands timed on the original and the accepted workspace, with wall time and, on Linux/macOS, CPU time and peak RSS (named as unsupported elsewhere).
+
 ### Checkpoint recovery
 
 - Deterministic fault injection (failure, crash, torn write) at every checkpoint save and file-writing step; standard tests up to the native build, an opt-in real PyO3 test from the build to promotion.

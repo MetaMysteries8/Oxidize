@@ -115,10 +115,28 @@ impl ComparisonPolicy {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PerformanceConfig {
+    /// Timed samples per side in each round.
     pub iterations: usize,
+    /// Untimed batches each side runs first, in every round (the same for both sides).
     pub warmup: usize,
     pub calls_per_sample: usize,
+    /// The slowest round's speedup must reach this for a candidate to be accepted.
     pub minimum_speedup: f64,
+    /// Interleaved original/candidate rounds, alternating which side goes first.
+    pub rounds: usize,
+    /// Largest per-round relative median absolute deviation still treated as a usable
+    /// measurement. Noisier rounds make the measurement inconclusive: no speed claim.
+    pub max_relative_mad: f64,
+    /// Whole-application commands, timed on the original and the accepted workspace.
+    pub workloads: Vec<WorkloadConfig>,
+}
+
+/// A user-defined whole-application workload: a command run from the project root.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkloadConfig {
+    pub name: String,
+    pub command: Vec<String>,
 }
 impl Default for PerformanceConfig {
     fn default() -> Self {
@@ -127,6 +145,9 @@ impl Default for PerformanceConfig {
             warmup: 2,
             calls_per_sample: 3,
             minimum_speedup: 1.0,
+            rounds: 3,
+            max_relative_mad: 0.25,
+            workloads: vec![],
         }
     }
 }
@@ -227,6 +248,41 @@ impl Config {
             "calls_per_sample must be 1..10000"
         );
         ensure!(self.performance.warmup <= 1000, "warmup exceeds 1000");
+        ensure!(
+            (1..=100).contains(&self.performance.rounds),
+            "performance.rounds must be 1..100"
+        );
+        ensure!(
+            self.performance.max_relative_mad.is_finite()
+                && self.performance.max_relative_mad > 0.0
+                && self.performance.max_relative_mad <= 10.0,
+            "performance.max_relative_mad must be greater than 0 and at most 10"
+        );
+        ensure!(
+            self.performance.workloads.len() <= 16,
+            "at most 16 performance.workloads"
+        );
+        let mut names = std::collections::BTreeSet::new();
+        for w in &self.performance.workloads {
+            ensure!(
+                !w.name.is_empty()
+                    && w.name.len() <= 64
+                    && w.name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)),
+                "workload names must be 1..64 characters of letters, digits, '-', '_' or '.'"
+            );
+            ensure!(
+                names.insert(&w.name),
+                "duplicate workload name {:?}",
+                w.name
+            );
+            ensure!(
+                !w.command.is_empty() && w.command.iter().all(|a| !a.is_empty()),
+                "workload {:?} needs a non-empty command",
+                w.name
+            );
+        }
         ensure!(
             self.performance.minimum_speedup.is_finite() && self.performance.minimum_speedup > 0.0,
             "minimum_speedup must be positive and finite"
