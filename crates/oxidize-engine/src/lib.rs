@@ -846,13 +846,15 @@ impl Session {
                 "[package]\nname = \"{module}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[lib]\nname = \"{module}\"\ncrate-type = [\"cdylib\"]\n[dependencies]\npyo3 = {{ version = \"=0.30.1\", features = [\"extension-module\"] }}\n[workspace]\n"
             ),
         )?;
-        let library = if cfg!(target_os = "macos") {
-            format!("lib{module}.dylib")
-        } else if cfg!(target_os = "linux") {
-            format!("lib{module}.so")
-        } else {
-            bail!("native artifact installation currently supports Linux and macOS");
-        };
+        // Named for where Cargo actually builds: a container is Linux even on a macOS host.
+        let library = oxidize_core::process::native_library_name(
+            &module,
+            oxidize_core::process::active_backend(&config.execution, trust)?,
+            std::env::consts::OS,
+        )
+        .context(
+            "native artifact installation currently supports Linux and macOS hosts, or a container sandbox",
+        )?;
         let component_file = safe_relative(&component.path)?;
         let mut seen = std::collections::BTreeSet::new();
         // Build, install, integrate and test; a compiler or integrated-test failure spends one
@@ -1183,6 +1185,7 @@ impl Session {
                         serde_json::to_string(&w.command)?,
                         performance.warmup.to_string(),
                         performance.iterations.to_string(),
+                        self.state.config.execution.output_limit_bytes.to_string(),
                     ];
                     let output = Runner {
                         config: &self.state.config.execution,

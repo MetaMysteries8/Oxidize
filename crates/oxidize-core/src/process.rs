@@ -507,6 +507,39 @@ fn workspace_owner(cwd: &Path) -> Option<String> {
 
 /// The name of the isolation a run with this configuration uses, for evidence records:
 /// `trust-code`, `bubblewrap`, `docker`, `podman`, or `unavailable` (the run itself fails).
+/// The backend a run uses: `None` with `--trust-code`, where the host itself runs it.
+pub fn active_backend(config: &ExecutionConfig, trust_code: bool) -> Result<Option<Backend>> {
+    if trust_code {
+        return Ok(None);
+    }
+    resolve_backend(
+        config.sandbox,
+        cfg!(target_os = "linux"),
+        bwrap_usable,
+        engine_usable,
+    )
+    .map(Some)
+}
+
+/// The file Cargo produces for a `cdylib` named `module`, for the platform that actually builds
+/// it: a container builds Linux code whatever the host is; Bubblewrap and `--trust-code` build
+/// for the host (`std::env::consts::OS`). `None` where native installation isn't supported.
+pub fn native_library_name(
+    module: &str,
+    backend: Option<Backend>,
+    host_os: &str,
+) -> Option<String> {
+    let target = match backend {
+        Some(Backend::Container(_)) => "linux",
+        Some(Backend::Bubblewrap) | None => host_os,
+    };
+    match target {
+        "linux" => Some(format!("lib{module}.so")),
+        "macos" => Some(format!("lib{module}.dylib")),
+        _ => None,
+    }
+}
+
 pub fn isolation_name(config: &ExecutionConfig, trust_code: bool) -> String {
     if trust_code {
         return "trust-code".into();
@@ -736,6 +769,39 @@ mod tests {
         assert!(SYSTEM_READ_ONLY_PATHS.contains(&"/etc/alternatives"));
         // ...but never the rest of /etc, which can hold credentials.
         assert!(!SYSTEM_READ_ONLY_PATHS.contains(&"/etc"));
+    }
+
+    #[test]
+    fn the_native_library_follows_the_backend_that_builds_it_not_the_host() {
+        let docker = Some(Backend::Container("docker"));
+        let podman = Some(Backend::Container("podman"));
+        // A container builds and runs Linux code whatever the host is.
+        for host in ["linux", "macos", "windows"] {
+            assert_eq!(
+                native_library_name("m", docker, host).as_deref(),
+                Some("libm.so"),
+                "{host}"
+            );
+            assert_eq!(
+                native_library_name("m", podman, host).as_deref(),
+                Some("libm.so"),
+                "{host}"
+            );
+        }
+        assert_eq!(
+            native_library_name("m", Some(Backend::Bubblewrap), "linux").as_deref(),
+            Some("libm.so")
+        );
+        // Without a container (--trust-code), the host builds it.
+        assert_eq!(
+            native_library_name("m", None, "linux").as_deref(),
+            Some("libm.so")
+        );
+        assert_eq!(
+            native_library_name("m", None, "macos").as_deref(),
+            Some("libm.dylib")
+        );
+        assert_eq!(native_library_name("m", None, "windows"), None);
     }
 
     #[test]

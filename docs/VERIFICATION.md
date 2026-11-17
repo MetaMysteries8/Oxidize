@@ -293,6 +293,12 @@ Evidence:
   for one command, not a general speed claim, and the test asserts only the structure, never a
   speedup.
 
+The wrapper drains the command's stderr as it arrives and keeps only the last 2 KiB. A command
+whose stderr passes `execution.output_limit_bytes` is stopped, and that is an error. Before a
+review finding on PR #1 the wrapper buffered all of it, so a noisy workload could exhaust
+memory past the runner's output limit. Test: 200 MiB of stderr against a 64 KiB limit is
+stopped with a bounded tail, and stderr within the limit still works.
+
 Limits: rounds run back to back on one machine; interleaving reduces drift but not contention
 from other load. Ranges are min/max over a few rounds, not statistical confidence intervals.
 Peak RSS is the largest single process (across warm-up and timed runs), not a total. CPU

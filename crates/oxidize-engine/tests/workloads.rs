@@ -7,10 +7,14 @@ use oxidize_engine::{
 use std::{fs, path::Path, process::Command};
 
 fn wrapper(command: &[&str]) -> std::process::Output {
+    wrapper_with_limit(command, 1_048_576)
+}
+fn wrapper_with_limit(command: &[&str], stderr_limit: usize) -> std::process::Output {
     Command::new("python3")
         .args(["-I", "-c", WRAPPER])
         .arg(serde_json::to_string(command).unwrap())
         .args(["1", "3"])
+        .arg(stderr_limit.to_string())
         .output()
         .unwrap()
 }
@@ -84,4 +88,54 @@ fn workloads_need_an_accepted_workspace_and_a_configuration() {
         report.contains("## Application workloads\n\nNone measured."),
         "{report}"
     );
+}
+
+#[test]
+fn a_workload_flooding_stderr_is_stopped_at_the_output_limit_not_buffered() {
+    // 200 MiB of stderr, then a normal exit. Buffering it all would hold 200 MiB in the wrapper.
+    let flood = "import sys\nchunk = 'e' * 65536\nfor _ in range(3200): sys.stderr.write(chunk)\n";
+    let start = std::time::Instant::now();
+    let out = wrapper_with_limit(&["python3", "-c", flood], 64 * 1024);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "a flood is an error, not a timing"
+    );
+    assert!(out.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("stderr exceeded 65536 bytes"),
+        "{}",
+        &stderr[stderr.len().saturating_sub(300)..]
+    );
+    assert!(
+        out.stderr.len() < 8 * 1024,
+        "only a bounded tail is kept: {} bytes",
+        out.stderr.len()
+    );
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(30),
+        "{:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn stderr_within_the_limit_is_fine_and_a_failure_shows_its_tail() {
+    let chatty = "import sys\nsys.stderr.write('x' * 10000)\n";
+    let out = wrapper_with_limit(&["python3", "-c", chatty], 64 * 1024);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let failing = "import sys\nsys.stderr.write('a' * 10000 + 'THE END')\nsys.exit(5)\n";
+    let out = wrapper_with_limit(&["python3", "-c", failing], 64 * 1024);
+    assert_eq!(out.status.code(), Some(3));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("THE END") && stderr.contains("exited 5"),
+        "{stderr}"
+    );
+    assert!(out.stderr.len() < 8 * 1024);
 }

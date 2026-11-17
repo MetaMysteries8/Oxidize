@@ -24,6 +24,9 @@ Milestone 2's checklist is complete on the development branch: 20/20 items, with
 
 ### Measurement
 
+- Fixed (review of PR #1): the workload wrapper buffered a command's entire stderr. It now drains it, keeps a 2 KiB tail and stops a command that passes `output_limit_bytes`.
+- Fixed (review of PR #1): the native library name followed the host OS, so a Linux container build on macOS looked for a `.dylib`. It now follows the backend that builds it (a container is always `.so`). Unit-tested for each host and backend; the container backend itself is still not engine-validated.
+
 - Acceptance timing runs original and candidate in interleaved rounds (`performance.rounds`, default 3), alternating which goes first. Raw samples are kept. The slowest round must reach `minimum_speedup`, and noisy, short or malformed timings (`max_relative_mad`, default 0.25) are "no claim" and never accepted.
 - `[[performance.workloads]]` and `oxidize workloads`: whole-application commands timed on the original and the accepted workspace, with wall time and, on Linux/macOS, CPU time and peak RSS (named as unsupported elsewhere).
 
