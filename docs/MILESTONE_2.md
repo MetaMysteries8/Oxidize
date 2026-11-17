@@ -1,6 +1,6 @@
 # Milestone 2 — Performance and Reliability
 
-**Status: in progress — first implementation slice delivered. Target: v0.2.0.** Baseline: v0.1.1 Working Foundation, including the checkpoint-lock recovery fix. Development branch: `milestone-2-performance-reliability`; package version: `0.2.0-dev`.
+**Status: checklist complete on the development branch (20/20, gate passed 2026-11-16). Target: v0.2.0, released when the owner merges and tags it.** Baseline: v0.1.1 Working Foundation, including the checkpoint-lock recovery fix. Development branch: `milestone-2-performance-reliability`; package version: `0.2.0-dev`.
 
 The goal is to make the existing Python/PyO3 migration path more reliable and its evidence more useful before adding source languages. The foundation already has basic differential testing, component timing, compiler repair, isolated copies, rollback and reporting. This milestone strengthens those implementations rather than treating them as missing or claiming planned capabilities are complete.
 
@@ -44,33 +44,17 @@ Acceptance: the full native demo succeeds inside the supported sandbox, the same
 
 - [x] Present original/current workload metrics, variability, acceptance/rejection reason, build/test evidence, repair history, remaining runtime dependencies and evidence limitations together. Evidence: a per-attempt summary (status, speed with range or no claim, repairs, reason), plain-language status, and measurement, checks, repairs, workloads, runtime dependencies and limits in one report ([verification](VERIFICATION.md#reports)).
 - [x] Preserve JSON schema versioning and test report generation for accepted, rejected, interrupted and rolled-back sessions. Evidence: `report.rs` generates and checks all four, plus a new session. `report.json` keeps `schema_version` 2, `events` and the raw samples, and v0.1.0 checkpoints upgrade with a recorded event ([verification](VERIFICATION.md#reports)).
-- [ ] Update README, skill references, changelog and roadmap with verified capabilities only.
-- [ ] Pass workspace formatting/Clippy/standard tests, real native integration tests, checkpoint fault tests, and the successful sandbox demonstration on a suitable host.
+- [x] Update README, skill references, changelog and roadmap with verified capabilities only. Evidence: README status, table and "What works"; `skills/oxidize/references/performance.md`; CHANGELOG sections per slice; ROADMAP marks Milestone 2 done, lists what is still open and adds ACP only as planned. Each claim links to its evidence in VERIFICATION.md.
+- [x] Pass workspace formatting/Clippy/standard tests, real native integration tests, checkpoint fault tests, and the successful sandbox demonstration on a suitable host. Evidence: [the completion gate](VERIFICATION.md#milestone-2-completion-gate), 2026-11-16 on Ubuntu: fmt and Clippy clean, 77 standard tests passed, 87 passed with every opt-in native test (including the 21-point native fault test), and the sandboxed native demo passed in Bubblewrap without `--trust-code`. CI (Linux, macOS, Windows) passes.
 
-## First implementation slice
+## How it was delivered
 
-**Implemented:** baseline and accepted-workspace protection from ordinary test/workload writes; positional/keyword mutation capture on return and exception paths; separate behavior/timing processes and fresh inputs; observation schema 2 with readable legacy evidence. Regression tests first reproduced canonical snapshot pollution and missing argument evidence. The real `python-mutation` fixture exercises a candidate that passes existing tests but fails mutation comparison, corrected-code resume, and rollback with checkpoint hashes preserved.
-
-**Additional verified slice (§2):** explicit return-float absolute/relative
-tolerances and call-output line-ending normalization, disabled by default.
-Config/comparator/report regressions preserve exact mutations, errors, types,
-dictionary keys/order and import output, validate limits, retain raw
-observations and the frozen policy, and load old configs with exact defaults.
-The `python-comparison` fixture captures actual original/candidate Python
-observations inside Bubblewrap and proves exact rejection versus scoped
-acceptance; unrelated mutation/error changes remain rejected. This is not a
-compiled PyO3 candidate or a sandboxed Cargo build.
-
-**Next slice:** introduce a testable sampling/policy layer, interleaved original/candidate measurements, and explicit insufficient/noisy-evidence handling. Whole-application profiling, file-effect comparison, event history/fault injection and successful sandboxed Cargo execution remain unchecked work. The completed disposable-copy slice is not a claim of stronger OS isolation.
-
-**Partial §2 file-effect slice:** explicitly configured regular files now have
-bounded before/after presence, size and SHA256 evidence, compared exactly and
-reported with their limits. Sandboxed Python fixtures prove creation/change/
-deletion/error-path capture and reject a same-length byte mismatch despite
-passing independent tests; malformed/legacy evidence fails closed. The compiled
-native-candidate rejection and corrected replay were demonstrated on 2026-11-15,
-closing the checkbox. This does not observe unlisted/transient/
-import-time writes, metadata or external systems.
+One verified slice per commit, test-first where it could be, each with its evidence in
+[VERIFICATION.md](VERIFICATION.md) and its entry in the [changelog](../CHANGELOG.md). Writing
+the tests found and fixed real bugs: a silently swapped sandbox interpreter, a missing
+`/etc/alternatives` mount, an attempt-start write failure that left no rejection, a resume that
+reported the previous run's speedup, duplicated replay generations, unbounded build caches, and
+container-only resource limits that were silently ignored elsewhere.
 
 ## Deferred
 

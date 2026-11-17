@@ -10,7 +10,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 - **`main`:** v0.1.1, the Working Foundation (Python/PyO3 path). Tagged releases are immutable.
 - **Working branch:** `milestone-2-performance-reliability`, toward v0.2.0. The plan and its
   checklist are in [MILESTONE_2.md](MILESTONE_2.md).
-- **Done on the branch** (ticked in MILESTONE_2.md with evidence; 18/20):
+- **Done on the branch** (ticked in MILESTONE_2.md with evidence; **20/20, complete**):
   - behaviour observation separated from timing (§1)
   - argument-mutation comparison (§2)
   - baseline tests run in disposable validation copies (§3)
@@ -23,10 +23,11 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
   - process supervision tests; unenforceable resource limits refused (§4)
   - repair from integrated-test failures with a recorded repair history (§4, all done)
   - report summary/status for every outcome, tested; report.json stays versioned (§5)
+  - docs updated to verified capabilities only; completion gate passed (§5)
 - **CI:** Linux (fmt, Clippy, tests, native PyO3 tests) plus blocking macOS/Windows build+tests.
-- **Baseline, 2026-11-15** (Linux, Rust 1.100.0, Python 3.13): `cargo build --locked
-  --workspace` OK, `cargo test --locked --workspace` gave 20 passed, 0 failed, 3 ignored (the
-  opt-in real PyO3 tests).
+- **Baseline, 2026-11-16** (Linux, Rust 1.100.0): fmt and Clippy clean; `cargo test --locked
+  --workspace` 77 passed, 0 failed, 10 ignored (opt-in native); with `--include-ignored`, 87
+  passed. CI green on Linux, macOS and Windows.
 - **Host note for §4:** Bubblewrap user-namespace sandboxes work on the owner's Ubuntu machine,
   even with `apparmor_restrict_unprivileged_userns=1`. That machine can validate the
   sandboxed build/test flow.
@@ -44,14 +45,13 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 
 Claim work here: `- <who> · <what> · <date started>`
 
-- Claude · finishing Milestone 2 (§1, §4, §5) · 2026-11-16
+- None.
 
 ## Next up (unclaimed)
 
 In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
 
-1. The rest of Milestone 2 (§1 sampling and workloads, §4 supervision and repair, §5). Claude is
-   on it; see In progress.
+1. **Owner:** review the branch, then merge to `main` and tag v0.2.0 (not done by agents).
 2. **Container sandbox validation:** run the sandboxed native demo with
    `execution.sandbox = "podman"` (or `"docker"`) and a toolchain image pinned by digest;
    fix whatever breaks (likely candidates: the offline Cargo registry inside the image,
@@ -146,3 +146,4 @@ language to Rust.
 - 2026-11-16 · Claude · §4 supervision: orphan/timeout/cancellation heartbeat tests (incl. a setsid escapee inside Bubblewrap); container-only limits are now refused, not silently ignored, under Bubblewrap/--trust-code. Core tests: 25 passed.
 - 2026-11-16 · Claude · §4 repair: integrated-test failures are repaired within `max_repairs`; per-repair trigger/diagnostics recorded and reported. Native repair tests 3/3 (local HTTP provider), engine native 11/11, standard 73 passed / 10 ignored.
 - 2026-11-16 · Claude · §5 report items: summary + status wording, report tests for rejected/interrupted/accepted/rolled-back/new sessions (4 passed).
+- 2026-11-16 · Claude · Milestone 2 complete (20/20). Docs pass done (README, ROADMAP incl. planned ACP provider, skill reference, CHANGELOG). Completion gate: fmt/Clippy clean, 77 standard, 87 with every opt-in native test, sandboxed demo passed (component 247.6x, `main.py 30000` wall 1.475x in Bubblewrap). Also fixed the Windows CI break from the repair refactor (build-stage tests now Linux/macOS only, plus an explicit-refusal test elsewhere). Nothing in progress. Next: owner review, merge and v0.2.0 tag.

@@ -2,7 +2,7 @@
 
 The project brief describes the destination; this checklist describes implementation status.
 
-The v0.1.0 foundation is the first version. The next target is [Milestone 2 — Performance and Reliability](MILESTONE_2.md), developed on `milestone-2-performance-reliability`. Its detailed acceptance checklist defines what must be verified before v0.2.0; preparing the branch does not complete that milestone.
+The v0.1.0 foundation is the first version. [Milestone 2 — Performance and Reliability](MILESTONE_2.md), developed on `milestone-2-performance-reliability`, has every checklist item ticked with evidence. v0.2.0 is released from it when the owner merges and tags it; until then it is the development branch.
 
 ## Delivered foundation
 
@@ -17,20 +17,29 @@ The v0.1.0 foundation is the first version. The next target is [Milestone 2 — 
 - [x] Portable skill, two workflows, install helper and agent-specific docs.
 - [x] Actual native migration demo, rejection/recovery tests, deterministic HTTP mock.
 
-## Next: strengthen this vertical slice
+## Milestone 2: done on the development branch
 
-Milestone two is in progress. Its first slice adds disposable validation copies, input-mutation comparison (including exception paths), and separate observation/timing processes with fresh inputs. See [the milestone checklist](MILESTONE_2.md) for the remaining acceptance gates.
+Delivered with evidence ([checklist](MILESTONE_2.md), [verification](VERIFICATION.md)): interleaved
+measurement with a noise policy, whole-application workloads with CPU/peak RSS, mutation and
+file-effect evidence, comparison opt-ins, case provenance, measurement context, checkpoint event
+history and v0.1 upgrades, fault-injection recovery, safe resume and rollback, validated Bubblewrap
+execution, process supervision, test-failure repair, and outcome-complete reports.
 
-1. Validate successful Bubblewrap execution on supported Linux hosts; add cgroup/process/memory/disk limits, stronger supervision and crash/fault-injection tests. Current environment blocks user namespaces, so only fail-closed behavior is validated here.
-2. Extend the delivered input-mutation evidence to file effects, import/initialization semantics, richer signatures, Python packages, object identity, numerical tolerances and nondeterministic outputs.
-3. Interleave timing samples, add confidence policies and whole-application workloads, collect CPU/peak RSS/allocations, measure bridge-only overhead and retain profiler artifacts.
-4. Repair integrated test mismatches within explicit budgets and maintain an append-only event journal, schema upgrades, and recovery from disk-full/atomic-write failure.
-5. Add automatic candidate selection/replanning/repetition, per-task token/cost budgets, task-specific model routing and user cancellation during in-flight HTTP.
+Still open from this area, for later milestones:
+
+1. Run the Podman/Docker backend against a real engine with a digest-pinned toolchain image.
+2. Statistical confidence intervals, allocations, bridge-only overhead and profiler artifacts.
+3. Disk limits; resource limits under Bubblewrap; orphan cleanup for `--trust-code` on Windows.
+4. Import/initialization semantics, richer signatures, Python packages, object identity and
+   nondeterministic outputs.
+5. Automatic candidate selection/replanning/repetition, per-task token/cost budgets, model routing
+   and cancellation during in-flight HTTP.
 
 ## Then: expand capabilities
 
 - JavaScript/TypeScript with AST parsing and napi-rs, then Go/cgo and native Rust optimization; each needs real end-to-end fixtures before support claims.
 - AST/type/ownership-aware interop adapters and dependency grouping/cycles.
+- **Planned: ACP (Agent Client Protocol) provider.** Oxidize acts as the ACP client and asks the user's own coding agent (anything with an ACP adapter) for the Rust code, over stdio. The agent gets no file-write or terminal permissions, sending source to it needs the same explicit opt-in as `--allow-provider`, and its output is untrusted and verified like any model's. Not started.
 - Native Anthropic/Gemini/Ollama/Pollinations/custom protocols, capabilities, fallback models, streaming and usage accounting. OpenAI-compatible servers can already be configured generically, but individual services have not been live tested.
 - Explicit Git URL cloning/revision selection, isolated worktrees, local checkpoint commits, opt-in PR automation. No pushes by default.
 - Rust entrypoint migration, runtime dependency removal, boundary consolidation and Hyperoxidize.

@@ -2,6 +2,9 @@
 
 ## v0.2.0-dev — Unreleased
 
+Milestone 2's checklist is complete on the development branch: 20/20 items, with the
+[completion gate](docs/VERIFICATION.md#milestone-2-completion-gate) passed on 2026-11-16.
+
 - Prepared `milestone-2-performance-reliability` from the v0.1.1 baseline, including its checkpoint-lock recovery fix.
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.

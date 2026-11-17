@@ -374,3 +374,32 @@ accepted one built by promoting that real attempt's state with a measurement, a 
 workload run, the same session rolled back, and a new session. Each must contain every common
 section and the outcome-specific wording, and `report.json` must carry the schema version,
 the events and the raw samples. The opt-in native tests check real accepted reports.
+
+## Milestone 2 completion gate
+
+Run on 2026-11-16 on the owner's Ubuntu machine (Linux 7.0, Rust 1.100.0, Conda Python 3.13 for
+`--trust-code` tests and system CPython 3.14 inside the sandbox), from commit `a37a02d`:
+
+- `cargo fmt --all -- --check` and `cargo clippy --locked --workspace --all-targets -- -D warnings`: clean.
+- `cargo test --locked --workspace`: 77 passed, 0 failed, 10 ignored (the opt-in native tests).
+- `cargo test --locked --workspace -- --include-ignored`: 87 passed, 0 failed. This includes
+  the real PyO3 migration, mutation, repair, comparison and file-effect tests, and the 21-point
+  native fault test.
+- The [sandboxed native demo](#sandboxed-native-demo), in Bubblewrap without `--trust-code`, with
+  a workload added: attempt 1 accepted, independent tests passed in a disposable copy, and
+  `main.py 100` printed `25` from the migrated workspace. The report showed a component speedup
+  of **247.6x** (rounds 232.5x, 248.0x, 247.6x). That includes Python/FFI call overhead and is
+  not a whole-application figure. `oxidize workloads` measured `/usr/bin/python3 main.py 30000` at
+  wall **1.475x** (range 1.39x to 1.55x) and CPU 1.477x, with peak RSS 15,052 KiB (original) and
+  15,676 KiB (accepted): the native module costs about 0.6 MiB more. Rollback restored the
+  baseline.
+- CI on the same commits: Linux, macOS and Windows jobs pass.
+
+The first gate run failed. The native fault test was rejected with "no speed claim (round 1:
+original timings too noisy (relative MAD 0.356 exceeds 0.25))", which is the noise policy
+working: microsecond workloads, 3 samples, run alongside other tests. That recovery test now
+sets an explicit loose `max_relative_mad`, as it already did for `minimum_speedup`.
+
+The whole-application figure differs between hosts and interpreters: 1.97x under Conda Python
+3.13 with `--trust-code` earlier the same day, 1.475x under system Python 3.14 in the sandbox.
+Figures are per host and interpreter, and are recorded with them.
