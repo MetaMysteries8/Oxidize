@@ -194,6 +194,66 @@ pub fn provenance_line(provenance: Option<&CaseProvenance>) -> String {
         }
     }
 }
+/// What an attempt's phase means for the reader, given the current accepted pointer.
+pub fn status_text(a: &Attempt, current: Option<usize>) -> String {
+    match a.phase {
+        Phase::Accepted if current == Some(a.id) => "**accepted**, the current workspace.".into(),
+        Phase::Accepted => {
+            "**accepted**, since superseded by a later accepted attempt built on it.".into()
+        }
+        Phase::Rejected => {
+            "**rejected** (reason below). The previous accepted workspace was kept.".into()
+        }
+        Phase::RolledBack => "**rolled back**. Its workspace and evidence are kept for inspection; the accepted pointer moved back.".into(),
+        Phase::Prepared | Phase::Generating | Phase::Building | Phase::Verifying => format!(
+            "**interrupted** during {:?}. Nothing from it is accepted; `oxidize resume` replays it from the saved code.",
+            a.phase
+        ),
+    }
+}
+
+/// One line per attempt: status, speed, repairs and any rejection reason, side by side.
+pub fn summary_section(state: &State) -> String {
+    if state.attempts.is_empty() {
+        return "## Summary\n\nNo migration attempts yet.\n\n".into();
+    }
+    let mut text = "## Summary\n\n".to_string();
+    for a in &state.attempts {
+        let status = match a.phase {
+            Phase::Accepted if state.current == Some(a.id) => "accepted (current)",
+            Phase::Accepted => "accepted (superseded)",
+            Phase::Rejected => "rejected",
+            Phase::RolledBack => "rolled back",
+            _ => "interrupted",
+        };
+        let speed = match (&a.measurement, a.speedup) {
+            (Some(m), _) => match &m.verdict {
+                Verdict::Measured {
+                    estimate,
+                    low,
+                    high,
+                } => {
+                    format!("speed {estimate:.3}x ({low:.3}x to {high:.3}x)")
+                }
+                Verdict::Inconclusive { .. } => "speed: no claim (inconclusive)".into(),
+            },
+            (None, Some(s)) => format!("speed {s:.3}x (legacy, no range)"),
+            (None, None) => "speed not measured".into(),
+        };
+        let reason = a
+            .error
+            .as_deref()
+            .and_then(|e| e.lines().next())
+            .map(|e| format!("; reason: {e}"))
+            .unwrap_or_default();
+        text += &format!(
+            "- Attempt {} `{}`: {status}; {speed}; {} repair(s){reason}\n",
+            a.id, a.component, a.repaired
+        );
+    }
+    text + "\n"
+}
+
 /// The report's speed paragraph: what was measured, how, and what it does and doesn't show.
 pub fn measurement_paragraph(
     measurement: Option<&Measurement>,
@@ -1201,12 +1261,17 @@ impl Session {
             "## File-effect scope\n\nRequested project-relative regular files: `{}`. Each configured file's presence, byte length and SHA256 are captured before/after each behavior call, including exceptions, and compared exactly. No file paths configured means no file-effect claim. Limits: 32 paths, 1 MiB per file. Raw contents are not retained. Tests/timing and import-time effects, unlisted paths, transient writes restored between snapshots, metadata/permissions, directory trees and external effects remain unverified.\n\n",
             serde_json::to_string(&self.state.config.verification.file_effect_paths)?
         );
+        report += &summary_section(&self.state);
         report += &history_line(&self.state);
         report += &workloads::report_section(&self.state.workloads);
         for a in &self.state.attempts {
             report += &format!(
-                "## Attempt {}: `{}`\n\nStatus: {:?}\n\nRepairs: {} (budget `max_repairs` = {}).\n\n",
-                a.id, a.component, a.phase, a.repaired, self.state.config.max_repairs
+                "## Attempt {}: `{}`\n\nStatus: {}\n\nRepairs: {} (budget `max_repairs` = {}).\n\n",
+                a.id,
+                a.component,
+                status_text(a, self.state.current),
+                a.repaired,
+                self.state.config.max_repairs
             );
             for (i, r) in a.repairs.iter().enumerate() {
                 report += &format!(

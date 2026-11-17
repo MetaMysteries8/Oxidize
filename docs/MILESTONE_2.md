@@ -42,8 +42,8 @@ Acceptance: the full native demo succeeds inside the supported sandbox, the same
 
 ## 5. Reports and completion gate
 
-- [ ] Present original/current workload metrics, variability, acceptance/rejection reason, build/test evidence, repair history, remaining runtime dependencies and evidence limitations together.
-- [ ] Preserve JSON schema versioning and test report generation for accepted, rejected, interrupted and rolled-back sessions.
+- [x] Present original/current workload metrics, variability, acceptance/rejection reason, build/test evidence, repair history, remaining runtime dependencies and evidence limitations together. Evidence: a per-attempt summary (status, speed with range or no claim, repairs, reason), plain-language status, and measurement, checks, repairs, workloads, runtime dependencies and limits in one report ([verification](VERIFICATION.md#reports)).
+- [x] Preserve JSON schema versioning and test report generation for accepted, rejected, interrupted and rolled-back sessions. Evidence: `report.rs` generates and checks all four, plus a new session. `report.json` keeps `schema_version` 2, `events` and the raw samples, and v0.1.0 checkpoints upgrade with a recorded event ([verification](VERIFICATION.md#reports)).
 - [ ] Update README, skill references, changelog and roadmap with verified capabilities only.
 - [ ] Pass workspace formatting/Clippy/standard tests, real native integration tests, checkpoint fault tests, and the successful sandbox demonstration on a suitable host.
 

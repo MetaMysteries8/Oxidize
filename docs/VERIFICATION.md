@@ -355,3 +355,22 @@ server standing in for the model):
 Limits: differential mismatches (behaviour that passes the tests but differs from the original)
 are not sent for repair. Their reasons would describe the original's outputs, and that
 evidence should stay independent of the generated code.
+
+## Reports
+
+Milestone 2 §5. `report.md` opens with a summary line per attempt: status, speed with its range
+or "no claim", repairs and the rejection reason. Each attempt then states what its status
+means: accepted (current or superseded), rejected (the previous workspace was kept), rolled back
+(kept for inspection) or interrupted (nothing accepted; `oxidize resume` replays it). Below
+that come the interleaved measurement, the build/test checks with exit codes, the repair
+history, the evidence provenance and the model usage. The report also covers application
+workloads, the event history, the comparison and file-effect scope, the remaining runtime
+dependencies (Python and PyO3) and the evidence limits. `report.json` is the checkpoint itself:
+`schema_version` 2 with `events`, raw measurement samples and workload runs.
+
+Evidence (`crates/oxidize-engine/tests/report.rs`, standard tests): reports for a real rejected
+session, a real interrupted one (both stopped by fault injection before the native build), an
+accepted one built by promoting that real attempt's state with a measurement, a repair and a
+workload run, the same session rolled back, and a new session. Each must contain every common
+section and the outcome-specific wording, and `report.json` must carry the schema version,
+the events and the raw samples. The opt-in native tests check real accepted reports.
