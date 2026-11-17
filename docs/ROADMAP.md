@@ -2,7 +2,7 @@
 
 The project brief describes the destination; this checklist describes implementation status.
 
-The v0.1.0 foundation is the first version. [Milestone 2 — Performance and Reliability](MILESTONE_2.md), developed on `milestone-2-performance-reliability`, has every checklist item ticked with evidence. v0.2.0 is released from it when the owner merges and tags it; until then it is the development branch.
+The v0.1.0 foundation is the first version. [Milestone 2 — Performance and Reliability](MILESTONE_2.md), developed on `milestone-2-performance-reliability`, is complete and released as v0.2.0.
 
 ## Delivered foundation
 
@@ -17,7 +17,7 @@ The v0.1.0 foundation is the first version. [Milestone 2 — Performance and Rel
 - [x] Portable skill, two workflows, install helper and agent-specific docs.
 - [x] Actual native migration demo, rejection/recovery tests, deterministic HTTP mock.
 
-## Milestone 2: done on the development branch
+## Milestone 2: released in v0.2.0
 
 Delivered with evidence ([checklist](MILESTONE_2.md), [verification](VERIFICATION.md)): interleaved
 measurement with a noise policy, whole-application workloads with CPU/peak RSS, mutation and

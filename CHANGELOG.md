@@ -1,13 +1,14 @@
 # Changelog
 
-## v0.2.0-dev — Unreleased
+## v0.2.0 — Performance and Reliability (2026-11-17)
 
-Milestone 2's checklist is complete on the development branch: 20/20 items, with the
-[completion gate](docs/VERIFICATION.md#milestone-2-completion-gate) passed on 2026-11-16.
+Milestone 2, complete: all 20 checklist items with evidence, and the
+[completion gate](docs/VERIFICATION.md#milestone-2-completion-gate) passed on 2026-11-16. Python/PyO3
+remains the only migration path. Checkpoints are now schema 2: v0.1.x sessions upgrade on open
+(the original is kept as `state.v1.json`), and v0.1.x can't read an upgraded one.
 
 - Prepared `milestone-2-performance-reliability` from the v0.1.1 baseline, including its checkpoint-lock recovery fix.
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
-- Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
 ### Reports
 
