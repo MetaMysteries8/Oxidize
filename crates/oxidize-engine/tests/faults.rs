@@ -332,10 +332,14 @@ fn two_component_project() -> (tempfile::TempDir, PathBuf) {
         fs::read_to_string(repo("fixtures/python-mutation/cases.json")).unwrap()
     );
     fs::write(root.join("cases.json"), cases).unwrap();
-    // A recovery test, not a performance claim: permit a measured slowdown.
+    // A recovery test, not a performance claim: permit a measured slowdown, and accept noisy
+    // timings of these microsecond workloads (the noise policy itself is tested in sampling.rs).
     let config = fs::read_to_string(root.join("oxidize.toml"))
         .unwrap()
-        .replace("minimum_speedup = 1.0", "minimum_speedup = 0.000001");
+        .replace(
+            "minimum_speedup = 1.0",
+            "minimum_speedup = 0.000001\nmax_relative_mad = 10.0",
+        );
     fs::write(root.join("oxidize.toml"), config).unwrap();
     (dir, root)
 }
