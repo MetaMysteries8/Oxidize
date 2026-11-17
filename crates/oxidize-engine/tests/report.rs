@@ -6,6 +6,9 @@
 //! the native build. The accepted session promotes that real attempt's state (with a
 //! measurement, a repair and a workload run), so the report generator is exercised for every
 //! outcome without a PyO3 build. The opt-in native tests check real accepted reports.
+// These runs stop at the native build, which only Linux and macOS reach: elsewhere a migration
+// is refused before building (see tests/platform.rs).
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 use oxidize_core::{fingerprint, snapshot};
 use oxidize_engine::{
     CHECKPOINT_SCHEMA_VERSION, Fault, FaultPoint, Phase, Repair, RepairTrigger, Session,

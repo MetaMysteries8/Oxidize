@@ -5,6 +5,9 @@
 //!
 //! These standard tests cover everything up to the native build. Points from the build onward
 //! need a real PyO3 build and are covered by the opt-in test at the end.
+// These runs stop at the native build, which only Linux and macOS reach: elsewhere a migration
+// is refused before building (see tests/platform.rs).
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 use oxidize_core::{fingerprint, snapshot};
 use oxidize_engine::{EventKind, Fault, FaultPoint, Phase, Session};
 use std::{
