@@ -6,6 +6,12 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### Checkpoint recovery
+
+- Deterministic fault injection (failure, crash, torn write) at every checkpoint save and file-writing step; standard tests up to the native build, an opt-in real PyO3 test from the build to promotion.
+- Fixed: a write failure when an attempt starts is now recorded as a rejection; a resume clears the previous run's speedup, candidate fingerprint and repair count; resuming with the same response doesn't record a duplicate generation.
+- Finished and archived attempts drop their Cargo `target/` directory (hundreds of MB each, not evidence).
+
 ### Checkpoint history and upgrades
 
 - Checkpoint schema 2: `state.json` records a numbered, versioned event history (creation, upgrade, attempt start/resume, phase changes, acceptance, rejection, rollback), each saved atomically with its state change. Reports state the schema and event count.

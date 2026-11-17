@@ -208,3 +208,49 @@ closed on its newer fields ("checkpoint is corrupt … unknown field `comparison
 upgrade. Events are a log for people and reports. Resume and rollback still act on the
 attempts and the accepted pointer, not by replaying events. Timestamps come from the host
 clock and are not evidence of ordering. `seq` is.
+
+## Checkpoint fault injection
+
+Milestone 2 §3. A test can install a fault injector on a session
+(`crates/oxidize-engine/src/faults.rs`). It sees every checkpoint save, before and after the
+atomic write, and every step that writes files (`attempt workspace`, `native source`,
+`install extension`, `integrate`). At each point it can inject:
+
+- a **failure**, such as a full disk. Normal error handling runs.
+- a **crash**. Recovery code is skipped, so the disk holds what a killed process leaves.
+- a **torn write**. Half of the new checkpoint reaches the temporary file and `state.json` is
+  never replaced.
+
+Production sessions have no injector.
+
+Evidence (`crates/oxidize-engine/tests/faults.rs`):
+
+- **Standard tests, every point before the native build.** At each point a crash, a torn write
+  (save points) and a write failure, plus every save failing from point *n* on. After each
+  fault, reopening works, the input fingerprint is unchanged, nothing is accepted or reported
+  as accepted, and the baseline is intact. A torn temporary file is ignored. A write failure is
+  recorded as a rejection with its cause, including at the attempt-start save, which used to
+  leave a half-recorded attempt. Resume (or a fresh migrate, if the attempt never reached disk)
+  gets back to the build with the baseline evidence intact and the generated code saved once.
+- **Opt-in real PyO3 test, every point from the build to promotion**
+  (`native_crash_at_every_point_from_the_build_to_promotion_keeps_or_completes_a_checkpoint`).
+  A first component is accepted; a second is crashed (or torn) at each point. Reopening shows
+  either the first checkpoint, current and byte-identical, or the second one complete and
+  accepted (a crash after the promotion was saved). Resume then completes it, and rolling back
+  returns to the untouched first checkpoint every time. Run on Linux on 2026-11-16: 21 points,
+  all passed (about 19 minutes).
+- **Replays never reuse stale results.** Speedup, candidate fingerprint and repair count from an
+  earlier run are cleared when a resume starts (previously they survived, and an interrupted
+  resume would have reported the old speedup). Resuming with the same `--response` replays it
+  rather than recording it as a second generation.
+- **Input edits are never touched.** With an unrelated edit in the input, resume refuses and
+  rollback has nothing to do. The edit and the checkpoint stay as they were, and once the edit
+  is moved out, resume carries on.
+- **Build caches.** Finished and archived attempts drop their Cargo `target/` directory, which
+  fingerprints and snapshots already exclude. Without this, the opt-in test above ran a 3.4 GB
+  tmpfs out of space after 11 attempts ("Disk quota exceeded").
+
+Limits: a crash is simulated in-process, at the points listed. A real `SIGKILL` between two
+system calls inside one step isn't covered, except that `state.json` changes only by atomic
+rename. Validation copies left by a real kill stay under `.oxidize/validation/`. Archived
+`interrupted-*` runs are kept for inspection and are not cleaned up automatically.

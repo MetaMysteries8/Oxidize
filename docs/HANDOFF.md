@@ -10,7 +10,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 - **`main`:** v0.1.1, the Working Foundation (Python/PyO3 path). Tagged releases are immutable.
 - **Working branch:** `milestone-2-performance-reliability`, toward v0.2.0. The plan and its
   checklist are in [MILESTONE_2.md](MILESTONE_2.md).
-- **Done on the branch** (ticked in MILESTONE_2.md with evidence; 10/20):
+- **Done on the branch** (ticked in MILESTONE_2.md with evidence; 12/20):
   - behaviour observation separated from timing (§1)
   - argument-mutation comparison (§2)
   - baseline tests run in disposable validation copies (§3)
@@ -18,6 +18,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
   - measurement context incl. interpreter and rustc (§1)
   - Bubblewrap validation, explicit authorization (§4)
   - versioned event history and checkpoint schema upgrades, v0.1.0 sessions preserved (§3)
+  - fault injection at every save/step; safe resume and repeated rollback (§3, all done)
 - **CI:** Linux (fmt, Clippy, tests, native PyO3 tests) plus blocking macOS/Windows build+tests.
 - **Baseline, 2026-11-15** (Linux, Rust 1.100.0, Python 3.13): `cargo build --locked
   --workspace` OK, `cargo test --locked --workspace` gave 20 passed, 0 failed, 3 ignored (the
@@ -39,15 +40,14 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 
 Claim work here: `- <who> · <what> · <date started>`
 
-- None.
+- Claude · finishing Milestone 2 (§1, §4, §5) · 2026-11-16
 
 ## Next up (unclaimed)
 
 In rough order. Each is a checklist item in [MILESTONE_2.md](MILESTONE_2.md):
 
-1. §3: deterministic interruption/fault-injection tests around generation, integration,
-   evidence collection and atomic promotion, including write failures. The event history
-   (`crates/oxidize-engine/src/history.rs`) gives these tests something to assert against.
+1. The rest of Milestone 2 (§1 sampling and workloads, §4 supervision and repair, §5). Claude is
+   on it; see In progress.
 2. **Container sandbox validation:** run the sandboxed native demo with
    `execution.sandbox = "podman"` (or `"docker"`) and a toolchain image pinned by digest;
    fix whatever breaks (likely candidates: the offline Cargo registry inside the image,
@@ -137,3 +137,4 @@ language to Rust.
 - 2026-11-15 · Claude · §2 "case provenance" ticked: per-attempt provenance in JSON + a report paragraph with the coverage limit. Milestone 2 is now 8/20.
 - 2026-11-15 · Claude · §2 native file-effect demo done (ticked): wrong-bytes PyO3 candidate rejected in Bubblewrap, corrected replay accepted; answer files added to the fixture. Also recorded rustc per measurement. Milestone 2: 9/20. Tree clean, pushed, nothing in progress.
 - 2026-11-16 · Claude · §3 event history + checkpoint schema upgrade done (ticked). Schema 2 adds `events`, saved atomically with each state change. v0.1.x checkpoints upgrade on open, and the original is kept as `state.v1.json`. Tested against a real checkpoint written by the v0.1.0 binary (`fixtures/legacy-v0.1.0-session`). Checks: fmt, Clippy -D warnings, 49 passed / 6 ignored; the engine suite with `--include-ignored` passes 11/11, including the real PyO3 builds. Milestone 2: 10/20.
+- 2026-11-16 · Claude · §3 done (fault injection; resume/rollback safety). Fixed three bugs the tests found: an attempt-start write failure left no rejection; a resume kept the previous run's speedup; resuming with the same response duplicated the generation. Also: finished attempts drop their `target/` (the native test filled a 3.4 GB tmpfs without it). Standard fault tests: 6 passed; opt-in native: 21/21 points.

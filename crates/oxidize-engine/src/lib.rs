@@ -16,9 +16,11 @@ use std::{
 };
 
 mod comparison;
+mod faults;
 mod history;
 use comparison::{differential_mismatch, has_argument_evidence, has_file_effect_evidence};
 pub use comparison::{equivalent, equivalent_with_policy};
+pub use faults::{Fault, FaultPoint, InjectedCrash, InjectedFailure};
 pub use history::{CHECKPOINT_SCHEMA_VERSION, EVENT_SCHEMA_VERSION, Event, EventKind};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,6 +221,7 @@ pub struct Session {
     pub root: PathBuf,
     pub directory: PathBuf,
     pub state: State,
+    faults: faults::Faults,
     _lock: fs::File,
 }
 
@@ -287,11 +290,41 @@ impl Session {
             root,
             directory,
             state,
+            faults: faults::Faults::default(),
             _lock: lock,
         })
     }
     pub fn save(&self) -> Result<()> {
-        atomic_json(&self.directory.join("state.json"), &self.state)
+        let n = self.faults.next_save();
+        let path = self.directory.join("state.json");
+        let point = FaultPoint::BeforeSave(n);
+        match self.faults.decide(&point) {
+            Fault::None => {}
+            Fault::Fail => return Err(InjectedFailure(point).into()),
+            Fault::Crash => return Err(InjectedCrash(point).into()),
+            Fault::Torn => {
+                let bytes = serde_json::to_vec_pretty(&self.state)?;
+                fs::write(path.with_extension("json.tmp"), &bytes[..bytes.len() / 2])?;
+                return Err(InjectedCrash(point).into());
+            }
+        }
+        atomic_json(&path, &self.state)?;
+        self.faults.check(FaultPoint::AfterSave(n))
+    }
+    /// Install a fault injector for recovery tests (see [`Fault`]). It sees every checkpoint save
+    /// and every file-writing step this session reaches from now on.
+    pub fn inject_faults(&mut self, injector: impl FnMut(&FaultPoint) -> Fault + 'static) {
+        self.faults.install(Box::new(injector));
+    }
+    /// Remove a finished attempt's Cargo build directory. It is hundreds of megabytes per
+    /// attempt, isn't evidence (fingerprints and snapshots exclude `target/`), and isn't
+    /// needed to run the workspace: the built extension is installed beside the Python code.
+    /// Best effort: a leftover cache only costs disk space.
+    fn prune_build_cache(&self, id: usize) {
+        let _ = fs::remove_dir_all(self.workspace(Some(id)).join("target"));
+    }
+    fn step(&self, name: &'static str) -> Result<()> {
+        self.faults.check(FaultPoint::Step(name))
     }
     pub fn workspace(&self, id: Option<usize>) -> PathBuf {
         id.map(|i| {
@@ -400,7 +433,9 @@ impl Session {
             component: component_id.into(),
             base: self.state.current,
         });
-        self.save()?;
+        if let Err(error) = self.save() {
+            self.reject(id, error)?;
+        }
         self.execute(id, response, trust_code, allow_provider)?;
         Ok(id)
     }
@@ -442,20 +477,36 @@ impl Session {
         trust_code: bool,
         allow_provider: bool,
     ) -> Result<()> {
-        let result = self.execute_inner(id, response, trust_code, allow_provider);
-        if let Err(error) = result {
-            self.state.attempts[id - 1].phase = Phase::Rejected;
-            self.state.attempts[id - 1].error = Some(format!("{error:#}"));
-            self.state.record(EventKind::Rejected {
-                attempt: id,
-                error: format!("{error:#}"),
-            });
-            self.save()?;
-            return Err(error.context(
-                "migration rejected; previous accepted workspace and input project are preserved",
-            ));
+        match self.execute_inner(id, response, trust_code, allow_provider) {
+            Ok(()) => Ok(()),
+            Err(error) => self.reject(id, error),
         }
-        Ok(())
+    }
+    /// Record attempt `id` as rejected because of `error`, and return that error.
+    fn reject(&mut self, id: usize, error: anyhow::Error) -> Result<()> {
+        if faults::is_crash(&error) {
+            // A dead process records nothing more.
+            return Err(error);
+        }
+        self.state.attempts[id - 1].phase = Phase::Rejected;
+        self.state.attempts[id - 1].error = Some(format!("{error:#}"));
+        self.state.record(EventKind::Rejected {
+            attempt: id,
+            error: format!("{error:#}"),
+        });
+        let saved = self.save();
+        if saved.is_ok() {
+            self.prune_build_cache(id);
+        }
+        if let Err(save) = saved {
+            // Keep the original cause; the checkpoint on disk is the last one that saved.
+            return Err(error.context(format!(
+                "migration failed, and recording the rejection also failed ({save:#}); the last saved checkpoint is kept and resume can replay it"
+            )));
+        }
+        Err(error.context(
+            "migration rejected; previous accepted workspace and input project are preserved",
+        ))
     }
     fn set_phase(&mut self, id: usize, phase: Phase) -> Result<()> {
         ensure!(
@@ -554,13 +605,21 @@ impl Session {
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_nanos()
             ));
-            fs::rename(&project, archived)?;
+            fs::rename(&project, &archived)?;
+            // Kept for inspection; its build cache is not evidence (fingerprints exclude it).
+            let _ = fs::remove_dir_all(archived.join("target"));
         }
         snapshot(&base, &project)?;
-        self.state.attempts[id - 1].checks.clear();
-        self.state.attempts[id - 1].error = None;
-        self.state.attempts[id - 1].baseline = None;
-        self.state.attempts[id - 1].candidate = None;
+        self.step("attempt workspace")?;
+        // A replay measures everything again: nothing from an earlier run may be reported.
+        let attempt = &mut self.state.attempts[id - 1];
+        attempt.checks.clear();
+        attempt.error = None;
+        attempt.baseline = None;
+        attempt.candidate = None;
+        attempt.speedup = None;
+        attempt.candidate_fingerprint = None;
+        attempt.repaired = 0;
         self.set_phase(id, Phase::Prepared)?;
 
         // Tests and observations happen before asking a provider for implementation.
@@ -592,8 +651,15 @@ impl Session {
                     "source transmission requires --allow-provider or an explicit --response file",
                 )?
                 .generate(&prompt)?;
-            self.state.attempts[id - 1].generations.push(generated);
-            self.save()?;
+            // Resuming with the same response replays it; only new code is a new generation.
+            let replay = self.state.attempts[id - 1]
+                .generations
+                .last()
+                .is_some_and(|g| g.code.rust == generated.code.rust && g.model == generated.model);
+            if !replay {
+                self.state.attempts[id - 1].generations.push(generated);
+                self.save()?;
+            }
         }
         let native = project.join("oxidized").join(&module);
         ensure!(
@@ -623,6 +689,7 @@ impl Session {
                 "repair stalled: provider repeated identical code"
             );
             fs::write(native.join("src/lib.rs"), &code)?;
+            self.step("native source")?;
             let mut diagnostics = String::new();
             for (name, args) in [
                 ("format", vec!["fmt", "--", "--check"]),
@@ -702,12 +769,14 @@ impl Session {
             suffix.starts_with('.') && !suffix.contains('/') && !suffix.contains('\\'),
             "invalid Python extension suffix"
         );
+        self.step("install extension")?;
         fs::copy(
             project.join("target/release").join(library),
             project.join(format!("{module}{suffix}")),
         )
         .context("install compiled Python extension")?;
         integrate(&project, &component, &module)?;
+        self.step("integrate")?;
         self.set_phase(id, Phase::Verifying)?;
         self.check_tests(id, &project, "integrated tests", trust)?;
         let candidate = self.evidence(&project, &component, &cases, trust)?;
@@ -744,6 +813,7 @@ impl Session {
             self.state.events.pop();
             return Err(error);
         }
+        self.prune_build_cache(id);
         Ok(())
     }
     fn harness<T: serde::de::DeserializeOwned>(
