@@ -77,6 +77,14 @@ enum Action {
         #[arg(long)]
         trust_code: bool,
     },
+    /// Time the configured whole-application workloads on the original and the accepted
+    /// workspace, interleaved; CPU time and peak RSS where the platform reports them.
+    Workloads {
+        #[arg(default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        trust_code: bool,
+    },
     Status {
         #[arg(default_value = ".")]
         project: PathBuf,
@@ -176,7 +184,7 @@ fn run() -> Result<()> {
             let session = Session::open(&project)?;
             session.verify(trust_code)?;
             println!(
-                "Configured tests passed in {}",
+                "Configured tests passed using a disposable copy of {}",
                 session.current_workspace().display()
             );
         }
@@ -189,6 +197,17 @@ fn run() -> Result<()> {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&session.benchmark(&component, trust_code)?)?
+            );
+        }
+        Action::Workloads {
+            project,
+            trust_code,
+        } => {
+            let mut session = Session::open(&project)?;
+            let run = session.run_workloads(trust_code)?;
+            println!(
+                "{}",
+                oxidize_engine::workloads::report_section(std::slice::from_ref(run))
             );
         }
         Action::Status { project } => {

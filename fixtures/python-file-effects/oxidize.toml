@@ -1,0 +1,5 @@
+python = "/usr/bin/python3"
+
+[verification]
+file_effect_paths = ["artifact.bin", "untouched.bin"]
+test_command = ["/usr/bin/python3", "-m", "unittest", "discover", "-v"]

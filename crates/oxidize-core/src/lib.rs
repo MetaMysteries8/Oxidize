@@ -62,6 +62,9 @@ pub struct VerificationConfig {
     pub cases_file: String,
     /// Argument vector, never interpreted by a shell.
     pub test_command: Vec<String>,
+    pub comparison: ComparisonPolicy,
+    /// Explicit regular files observed before/after each behavior case, relative to the project.
+    pub file_effect_paths: Vec<String>,
 }
 impl Default for VerificationConfig {
     fn default() -> Self {
@@ -74,16 +77,66 @@ impl Default for VerificationConfig {
                 "discover".into(),
                 "-v".into(),
             ],
+            comparison: ComparisonPolicy::default(),
+            file_effect_paths: vec![],
         }
+    }
+}
+
+/// Opt-ins affect only returned float values and call stdout/stderr, never mutations or errors.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ComparisonPolicy {
+    pub return_float_tolerance: Option<FloatTolerance>,
+    pub normalize_output_line_endings: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FloatTolerance {
+    pub absolute: f64,
+    pub relative: f64,
+}
+
+impl ComparisonPolicy {
+    pub fn validate(&self) -> Result<()> {
+        if let Some(tolerance) = &self.return_float_tolerance {
+            ensure!(
+                tolerance.absolute.is_finite()
+                    && tolerance.absolute >= 0.0
+                    && tolerance.relative.is_finite()
+                    && tolerance.relative >= 0.0,
+                "return float tolerances must be finite and nonnegative"
+            );
+        }
+        Ok(())
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PerformanceConfig {
+    /// Timed samples per side in each round.
     pub iterations: usize,
+    /// Untimed batches each side runs first, in every round (the same for both sides).
     pub warmup: usize,
     pub calls_per_sample: usize,
+    /// The slowest round's speedup must reach this for a candidate to be accepted.
     pub minimum_speedup: f64,
+    /// Interleaved original/candidate rounds, alternating which side goes first.
+    pub rounds: usize,
+    /// Largest per-round relative median absolute deviation still treated as a usable
+    /// measurement. Noisier rounds make the measurement inconclusive: no speed claim.
+    pub max_relative_mad: f64,
+    /// Whole-application commands, timed on the original and the accepted workspace.
+    pub workloads: Vec<WorkloadConfig>,
+}
+
+/// A user-defined whole-application workload: a command run from the project root.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkloadConfig {
+    pub name: String,
+    pub command: Vec<String>,
 }
 impl Default for PerformanceConfig {
     fn default() -> Self {
@@ -92,6 +145,9 @@ impl Default for PerformanceConfig {
             warmup: 2,
             calls_per_sample: 3,
             minimum_speedup: 1.0,
+            rounds: 3,
+            max_relative_mad: 0.25,
+            workloads: vec![],
         }
     }
 }
@@ -104,6 +160,17 @@ pub struct ExecutionConfig {
     pub read_only_paths: Vec<PathBuf>,
     /// Cargo must use a pre-populated cache in the isolated default mode.
     pub offline: bool,
+    /// Which isolation runs builds and tests. `auto` picks Bubblewrap on Linux when it
+    /// works there, otherwise Podman, otherwise Docker, and refuses if none is usable.
+    pub sandbox: SandboxKind,
+    /// The container image for Docker/Podman, pinned by digest (`name@sha256:…`), with the
+    /// Rust and Python toolchains and the project's dependencies available offline.
+    pub image: Option<String>,
+    /// Container-only resource limits. Bubblewrap and `--trust-code` runs are refused while any
+    /// is set, rather than run without them (see SECURITY.md).
+    pub memory_mb: Option<u64>,
+    pub pids_limit: Option<u64>,
+    pub cpus: Option<f64>,
 }
 impl Default for ExecutionConfig {
     fn default() -> Self {
@@ -112,8 +179,24 @@ impl Default for ExecutionConfig {
             output_limit_bytes: 1_048_576,
             read_only_paths: vec![],
             offline: true,
+            sandbox: SandboxKind::Auto,
+            image: None,
+            memory_mb: None,
+            pids_limit: None,
+            cpus: None,
         }
     }
+}
+
+/// The isolation backend for builds and tests (`--trust-code` bypasses all of them).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxKind {
+    #[default]
+    Auto,
+    Bubblewrap,
+    Docker,
+    Podman,
 }
 impl Config {
     pub fn load(root: &Path) -> Result<Self> {
@@ -126,6 +209,31 @@ impl Config {
         Ok(config)
     }
     pub fn validate(&self) -> Result<()> {
+        self.verification.comparison.validate()?;
+        ensure!(
+            self.verification.file_effect_paths.len() <= 32,
+            "at most 32 file-effect paths may be observed"
+        );
+        for (index, value) in self.verification.file_effect_paths.iter().enumerate() {
+            let path = safe_relative(value)?;
+            ensure!(value.len() <= 1024, "file-effect path exceeds 1024 bytes");
+            ensure!(
+                !self.verification.file_effect_paths[..index].contains(value),
+                "duplicate file-effect path: {value}"
+            );
+            for part in path.components() {
+                let name = part.as_os_str().to_string_lossy();
+                ensure!(
+                    !matches!(
+                        name.as_ref(),
+                        ".git" | ".oxidize" | ".ssh" | ".aws" | ".cargo" | ".rustup"
+                    ) && !name.starts_with(".env")
+                        && !name.ends_with(".pem")
+                        && !name.ends_with(".key"),
+                    "reserved or credential-like file-effect path"
+                );
+            }
+        }
         ensure!(!self.python.is_empty(), "python executable is empty");
         ensure!(
             !self.verification.test_command.is_empty(),
@@ -141,6 +249,41 @@ impl Config {
             "calls_per_sample must be 1..10000"
         );
         ensure!(self.performance.warmup <= 1000, "warmup exceeds 1000");
+        ensure!(
+            (1..=100).contains(&self.performance.rounds),
+            "performance.rounds must be 1..100"
+        );
+        ensure!(
+            self.performance.max_relative_mad.is_finite()
+                && self.performance.max_relative_mad > 0.0
+                && self.performance.max_relative_mad <= 10.0,
+            "performance.max_relative_mad must be greater than 0 and at most 10"
+        );
+        ensure!(
+            self.performance.workloads.len() <= 16,
+            "at most 16 performance.workloads"
+        );
+        let mut names = std::collections::BTreeSet::new();
+        for w in &self.performance.workloads {
+            ensure!(
+                !w.name.is_empty()
+                    && w.name.len() <= 64
+                    && w.name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)),
+                "workload names must be 1..64 characters of letters, digits, '-', '_' or '.'"
+            );
+            ensure!(
+                names.insert(&w.name),
+                "duplicate workload name {:?}",
+                w.name
+            );
+            ensure!(
+                !w.command.is_empty() && w.command.iter().all(|a| !a.is_empty()),
+                "workload {:?} needs a non-empty command",
+                w.name
+            );
+        }
         ensure!(
             self.performance.minimum_speedup.is_finite() && self.performance.minimum_speedup > 0.0,
             "minimum_speedup must be positive and finite"
@@ -159,6 +302,16 @@ impl Config {
                 .iter()
                 .all(|p| p.is_absolute()),
             "read_only_paths must be absolute host paths"
+        );
+        if let Some(image) = &self.execution.image {
+            ensure!(
+                image.contains("@sha256:"),
+                "execution.image must be pinned by digest (name@sha256:…), not a tag that can change: {image}"
+            );
+        }
+        ensure!(
+            self.execution.cpus.is_none_or(|c| c > 0.0) && self.execution.memory_mb != Some(0),
+            "execution.cpus and execution.memory_mb must be positive"
         );
         ensure!(self.max_repairs <= 10, "max_repairs exceeds 10");
         ensure!(
@@ -288,10 +441,17 @@ pub fn digest(bytes: &[u8]) -> String {
 }
 
 pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
+    atomic_write(path, &serde_json::to_vec_pretty(value)?)
+}
+
+/// Replace `path` with `bytes` so a reader sees either the old file or the whole new one.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
-    let temporary = path.with_extension("json.tmp");
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = PathBuf::from(temporary);
     let mut f = fs::File::create(&temporary)?;
-    f.write_all(&serde_json::to_vec_pretty(value)?)?;
+    f.write_all(bytes)?;
     f.sync_all()?;
     fs::rename(temporary, path)?;
     #[cfg(unix)]

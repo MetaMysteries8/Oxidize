@@ -1,0 +1,8 @@
+python = "/usr/bin/python3"
+
+[verification.comparison]
+normalize_output_line_endings = true
+
+[verification.comparison.return_float_tolerance]
+absolute = 0.000001
+relative = 0.00001

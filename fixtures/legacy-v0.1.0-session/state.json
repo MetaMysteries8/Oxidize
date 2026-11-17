@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "source_fingerprint": "2ff73a1d8443f7c61d507e7ce0cd32a6c22005e0fac1d9adb10c1a34a3932bd4",
+  "source_revision": "8ffe804ca6a72e32c2d513cfbdf3a24b79445373",
+  "config": {
+    "python": "python3",
+    "provider": {
+      "endpoint": "http://127.0.0.1:11434/v1",
+      "model": "configure-your-model",
+      "api_key_env": "OXIDIZE_API_KEY",
+      "timeout_seconds": 120,
+      "retries": 2,
+      "max_output_tokens": 4096,
+      "max_context_bytes": 32768
+    },
+    "verification": {
+      "cases_file": "cases.json",
+      "test_command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-v"
+      ]
+    },
+    "performance": {
+      "iterations": 7,
+      "warmup": 2,
+      "calls_per_sample": 3,
+      "minimum_speedup": 1.0
+    },
+    "execution": {
+      "timeout_seconds": 180,
+      "output_limit_bytes": 1048576,
+      "read_only_paths": [],
+      "offline": true
+    },
+    "max_repairs": 2
+  },
+  "current": null,
+  "attempts": [
+    {
+      "id": 1,
+      "component": "compute.py:count_primes",
+      "base": null,
+      "phase": "rejected",
+      "source_fingerprint": "2ff73a1d8443f7c61d507e7ce0cd32a6c22005e0fac1d9adb10c1a34a3932bd4",
+      "candidate_fingerprint": null,
+      "generations": [
+        {
+          "code": {
+            "rust": "use pyo3::exceptions::{PyTypeError, PyValueError};\nuse pyo3::prelude::*;\nuse pyo3::types::PyInt;\n\n#[pyfunction]\nfn count_primes(limit: &Bound<'_, PyAny>) -> PyResult<usize> {\n    if !limit.is_exact_instance_of::<PyInt>() {\n        return Err(PyTypeError::new_err(\"limit must be an integer\"));\n    }\n    if limit.lt(0)? {\n        return Err(PyValueError::new_err(\"limit must be non-negative\"));\n    }\n    if limit.gt(1_000_000)? {\n        return Err(PyValueError::new_err(\"limit too large\"));\n    }\n    let limit: usize = limit.extract()?;\n    let mut composite = vec![false; limit];\n    let mut count = 0;\n    for number in 2..limit {\n        if !composite[number] {\n            count += 1;\n            if number <= (limit - 1) / number {\n                for multiple in (number * number..limit).step_by(number) {\n                    composite[multiple] = true;\n                }\n            }\n        }\n    }\n    Ok(count)\n}\n\n#[pymodule]\nfn _oxidize_5cf14915940d(m: &Bound<'_, PyModule>) -> PyResult<()> {\n    m.add_function(wrap_pyfunction!(count_primes, m)?)?;\n    Ok(())\n}\n"
+          },
+          "model": "offline-response-file (no AI call)",
+          "usage": {
+            "prompt_tokens": null,
+            "completion_tokens": null
+          },
+          "estimated_cost_usd": null
+        }
+      ],
+      "checks": [
+        [
+          "baseline tests",
+          {
+            "code": 0,
+            "stdout": "",
+            "stderr": "test_against_independent_reference (test_compute.ComputeTests.test_against_independent_reference) ... ok\ntest_errors (test_compute.ComputeTests.test_errors) ... ok\ntest_known_counts (test_compute.ComputeTests.test_known_counts) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 0.030s\n\nOK\n",
+            "elapsed_ms": 179.12977
+          }
+        ],
+        [
+          "format",
+          {
+            "code": 1,
+            "stdout": "",
+            "stderr": "bwrap: execvp cargo: No such file or directory\n",
+            "elapsed_ms": 24.540198999999998
+          }
+        ]
+      ],
+      "baseline": {
+        "observations": [
+          {
+            "return": [
+              "int",
+              0
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "return": [
+              "int",
+              0
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "return": [
+              "int",
+              0
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "return": [
+              "int",
+              1
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "return": [
+              "int",
+              25
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "return": [
+              "int",
+              3245
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "error": [
+              "builtins",
+              "ValueError",
+              "limit must be non-negative"
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "error": [
+              "builtins",
+              "TypeError",
+              "limit must be an integer"
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "error": [
+              "builtins",
+              "TypeError",
+              "limit must be an integer"
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "error": [
+              "builtins",
+              "ValueError",
+              "limit too large"
+            ],
+            "stderr": "",
+            "stdout": ""
+          },
+          {
+            "return": [
+              "int",
+              4
+            ],
+            "stderr": "",
+            "stdout": ""
+          }
+        ],
+        "import_stdout": "",
+        "import_stderr": "",
+        "benchmark": {
+          "samples_ns": [
+            123344434.0,
+            120564886.0,
+            120512205.0,
+            120173293.0,
+            121917998.0,
+            123295488.0,
+            120693925.0
+          ],
+          "median_ns": 120693925.0,
+          "mad_ns": 520632.0,
+          "successful_cases": 7,
+          "calls_per_sample": 21
+        }
+      },
+      "candidate": null,
+      "speedup": null,
+      "error": "offline response failed compiler checks:\nformat\n\nbwrap: execvp cargo: No such file or directory\n",
+      "repaired": 0
+    }
+  ]
+}

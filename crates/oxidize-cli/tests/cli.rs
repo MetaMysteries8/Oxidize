@@ -1,5 +1,44 @@
 use std::{fs, path::Path, process::Command};
 
+/// Milestone 2 §4: source code never goes to a model provider unless the user said so.
+/// Unix-only: the fixture's tests run `python3`, which Windows CI runners don't provide.
+#[cfg(unix)]
+#[test]
+fn migrate_refuses_to_send_source_without_explicit_provider_authorization() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("demo");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/python-cli");
+    fs::create_dir(&project).unwrap();
+    for entry in fs::read_dir(&fixture).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_file() {
+            fs::copy(entry.path(), project.join(entry.file_name())).unwrap();
+        }
+    }
+    let oxidize = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_oxidize"))
+            .args(args)
+            .arg(&project)
+            .output()
+            .unwrap()
+    };
+    assert!(oxidize(&["analyze"]).status.success());
+    assert!(oxidize(&["plan"]).status.success());
+    // Neither --response nor --allow-provider: nothing may be sent anywhere.
+    let out = Command::new(env!("CARGO_BIN_EXE_oxidize"))
+        .arg("migrate")
+        .arg(&project)
+        .args(["--component", "compute.py:count_primes", "--trust-code"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("requires --allow-provider or an explicit --response file"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn cli_analyzes_and_plans_without_executing_source() {
     let dir = tempfile::tempdir().unwrap();

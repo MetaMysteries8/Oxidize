@@ -1,0 +1,12 @@
+# Same bytes on every platform. Oxidize compares program behaviour (stdout, file effects,
+# fixtures, expected outputs), so a Windows checkout must not turn LF into CRLF: that
+# would make the same fixture behave differently by OS. Found by the Windows CI job.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.so binary
+*.pyd binary
+*.dylib binary
+*.dll binary

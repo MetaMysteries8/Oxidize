@@ -1,0 +1,17 @@
+python = "python3"
+max_repairs = 0
+
+[verification]
+cases_file = "cases.json"
+test_command = ["python3", "-m", "unittest", "discover", "-v"]
+
+[performance]
+iterations = 3
+warmup = 1
+calls_per_sample = 2
+# A correctness fixture, not a performance claim. Permit a measured slowdown.
+minimum_speedup = 0.000001
+
+[execution]
+timeout_seconds = 180
+offline = true
