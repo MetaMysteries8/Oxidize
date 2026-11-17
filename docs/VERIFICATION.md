@@ -299,3 +299,30 @@ Peak RSS is the largest single process (across warm-up and timed runs), not a to
 time is the process tree's user + system time as the OS accounts it, which can be coarse for
 very short runs (such rounds tend to come out inconclusive). Workloads need an accepted
 workspace, and their commands run in the same sandbox as tests.
+
+## Process supervision
+
+Milestone 2 §4. Every command runs in its own process group (`--trust-code`) or its own
+Bubblewrap PID namespace with `--die-with-parent`. When it exits, times out (`timeout_seconds`),
+exceeds `output_limit_bytes` or is cancelled (Ctrl-C), the whole tree is killed and nothing it
+started keeps running. A cancelled Oxidize refuses to start new commands. Resource limits
+(`memory_mb`, `pids_limit`, `cpus`) are enforced only by Podman/Docker. With Bubblewrap or
+`--trust-code` a run with any of them set is refused, naming the limits, instead of running
+unlimited. Before this change they were silently ignored.
+
+Evidence (`crates/oxidize-core/tests/supervision.rs`, `cancellation.rs`, standard tests on
+Unix): each test starts a grandchild that rewrites a heartbeat file every 50 ms and checks the
+file stops changing.
+
+- A command that exits normally leaves no running descendant (`--trust-code`).
+- A 1 s timeout stops a tree that would sleep for 60 s, within 10 s (`--trust-code`).
+- Inside Bubblewrap, even a descendant that started its own session (escaping the process
+  group) is stopped, both after a normal exit and after a timeout. Skipped where Bubblewrap or
+  `/usr/bin/python3` is unavailable.
+- Cancellation stops a running tree within 10 s, and the next command is refused.
+- Each of the three limits is refused with `--trust-code` and with Bubblewrap.
+
+Limits: with `--trust-code`, a descendant that calls `setsid()` escapes the process-group kill
+(Bubblewrap's PID namespace doesn't have that gap). On Windows, `--trust-code` kills only the
+direct child, and these tests don't run there. Container limits are unit-tested as arguments
+only; no engine has run them yet (see the container note in HANDOFF.md).

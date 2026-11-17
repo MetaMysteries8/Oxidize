@@ -81,7 +81,24 @@ impl Runner<'_> {
         ensure!(!argv.is_empty(), "empty command");
         // Set when the command runs in a container: (engine, container name), for cleanup.
         let mut container: Option<(&'static str, String)> = None;
+        let unenforced = |backend: &str| -> Result<()> {
+            let set: Vec<&str> = [
+                ("memory_mb", self.config.memory_mb.is_some()),
+                ("pids_limit", self.config.pids_limit.is_some()),
+                ("cpus", self.config.cpus.is_some()),
+            ]
+            .into_iter()
+            .filter_map(|(name, on)| on.then_some(name))
+            .collect();
+            ensure!(
+                set.is_empty(),
+                "execution.{} configured, but only podman or docker can enforce resource limits and this run uses {backend}; refusing to run without them (remove them, or use a container sandbox)",
+                set.join(", execution.")
+            );
+            Ok(())
+        };
         let mut cmd = if self.trust_code {
+            unenforced("--trust-code (no isolation)")?;
             let mut cmd = Command::new(&argv[0]);
             cmd.args(&argv[1..]);
             cmd
@@ -124,6 +141,7 @@ impl Runner<'_> {
                 container = Some((engine, name));
                 cmd
             } else {
+                unenforced("Bubblewrap")?;
                 let mut visible: Vec<&Path> =
                     SYSTEM_READ_ONLY_PATHS.iter().map(Path::new).collect();
                 visible.extend(self.config.read_only_paths.iter().map(PathBuf::as_path));
@@ -361,7 +379,8 @@ fn probe_ok(argv: &[&str]) -> bool {
         .status()
         .is_ok_and(|s| s.success())
 }
-fn bwrap_usable() -> bool {
+/// Whether Bubblewrap can create a sandbox on this host.
+pub fn bwrap_usable() -> bool {
     static OK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OK.get_or_init(|| probe_ok(&["bwrap", "--unshare-all", "--ro-bind", "/", "/", "true"]))
 }

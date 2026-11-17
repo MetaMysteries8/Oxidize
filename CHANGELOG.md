@@ -6,6 +6,11 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### Process supervision
+
+- `execution.memory_mb`, `pids_limit` and `cpus` were silently ignored outside containers; a Bubblewrap or `--trust-code` run with any of them set is now refused by name.
+- Tests for orphan cleanup after normal exit, timeout and cancellation (including a `setsid` escapee inside Bubblewrap).
+
 ### Measurement
 
 - Acceptance timing runs original and candidate in interleaved rounds (`performance.rounds`, default 3), alternating which goes first. Raw samples are kept. The slowest round must reach `minimum_speedup`, and noisy, short or malformed timings (`max_relative_mad`, default 0.25) are "no claim" and never accepted.

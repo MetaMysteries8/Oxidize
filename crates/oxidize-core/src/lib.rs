@@ -166,7 +166,8 @@ pub struct ExecutionConfig {
     /// The container image for Docker/Podman, pinned by digest (`name@sha256:…`), with the
     /// Rust and Python toolchains and the project's dependencies available offline.
     pub image: Option<String>,
-    /// Container-only resource limits. Bubblewrap has none (see SECURITY.md).
+    /// Container-only resource limits. Bubblewrap and `--trust-code` runs are refused while any
+    /// is set, rather than run without them (see SECURITY.md).
     pub memory_mb: Option<u64>,
     pub pids_limit: Option<u64>,
     pub cpus: Option<f64>,
