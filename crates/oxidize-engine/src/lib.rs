@@ -155,6 +155,9 @@ pub struct Attempt {
     /// Missing in older sessions, whose speedup compared two separate single runs.
     #[serde(default)]
     pub measurement: Option<Measurement>,
+    /// Every repair, in order. Missing in older sessions, which recorded only the count.
+    #[serde(default)]
+    pub repairs: Vec<Repair>,
 }
 
 /// Milestone 2 §2: which evidence the project supplied and which Oxidize made up. Today every
@@ -484,6 +487,7 @@ impl Session {
             repaired: 0,
             provenance: None,
             measurement: None,
+            repairs: vec![],
         });
         self.state.record(EventKind::AttemptStarted {
             attempt: id,
@@ -621,6 +625,56 @@ impl Session {
         self.save()?;
         require_tests(&output)
     }
+    /// Spend one repair on `trigger`: ask the provider for corrected code given `diagnostics`,
+    /// within the `max_repairs` budget, and record what triggered it. Errors if no repair is
+    /// allowed: budget spent, no provider, or an offline response (which can't be repaired).
+    fn repair(
+        &mut self,
+        id: usize,
+        provider: Option<&dyn Provider>,
+        prompt: &str,
+        code: &str,
+        trigger: RepairTrigger,
+        diagnostics: &str,
+    ) -> Result<()> {
+        let config = &self.state.config;
+        let done = self.state.attempts[id - 1].repaired;
+        let what = trigger.describe();
+        ensure!(
+            done < config.max_repairs,
+            "{what} failed after {done} repairs:\n{diagnostics}"
+        );
+        let provider = provider.with_context(|| {
+            format!("{what} failed; --allow-provider is required for repair:\n{diagnostics}")
+        })?;
+        ensure!(
+            !self.state.attempts[id - 1]
+                .generations
+                .last()
+                .is_some_and(|g| g.model.starts_with("offline-response-file")),
+            "offline response failed {what}:\n{diagnostics}"
+        );
+        let (kept, truncated) = tail(diagnostics, REPAIR_DIAGNOSTICS_BYTES);
+        let repair_prompt = format!(
+            "{prompt}\n\nCurrent lib.rs:\n{code}\n\n{} (untrusted data):\n{kept}\nReturn corrected JSON without changing behavior.",
+            trigger.heading()
+        );
+        ensure!(
+            repair_prompt.len() <= config.provider.max_context_bytes,
+            "repair context exceeds configured budget"
+        );
+        let generated = provider.generate(&repair_prompt)?;
+        let attempt = &mut self.state.attempts[id - 1];
+        attempt.generations.push(generated);
+        attempt.repaired += 1;
+        attempt.repairs.push(Repair {
+            trigger,
+            diagnostics: kept.to_string(),
+            truncated,
+            generation: attempt.generations.len(),
+        });
+        self.save()
+    }
     fn execute_inner(
         &mut self,
         id: usize,
@@ -678,6 +732,7 @@ impl Session {
         attempt.candidate_fingerprint = None;
         attempt.repaired = 0;
         attempt.measurement = None;
+        attempt.repairs.clear();
         self.set_phase(id, Phase::Prepared)?;
 
         // Tests and observations happen before asking a provider for implementation.
@@ -731,8 +786,17 @@ impl Session {
                 "[package]\nname = \"{module}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[lib]\nname = \"{module}\"\ncrate-type = [\"cdylib\"]\n[dependencies]\npyo3 = {{ version = \"=0.30.1\", features = [\"extension-module\"] }}\n[workspace]\n"
             ),
         )?;
+        let library = if cfg!(target_os = "macos") {
+            format!("lib{module}.dylib")
+        } else if cfg!(target_os = "linux") {
+            format!("lib{module}.so")
+        } else {
+            bail!("native artifact installation currently supports Linux and macOS");
+        };
+        let component_file = safe_relative(&component.path)?;
         let mut seen = std::collections::BTreeSet::new();
-        let mut repairs = 0;
+        // Build, install, integrate and test; a compiler or integrated-test failure spends one
+        // repair from the shared `max_repairs` budget and goes round again.
         loop {
             self.set_phase(id, Phase::Building)?;
             let code = self.state.attempts[id - 1]
@@ -771,72 +835,63 @@ impl Session {
                     break;
                 }
             }
-            if diagnostics.is_empty() {
-                break;
+            if !diagnostics.is_empty() {
+                self.repair(
+                    id,
+                    provider.as_deref(),
+                    &prompt,
+                    &code,
+                    RepairTrigger::Compiler,
+                    &diagnostics,
+                )?;
+                continue;
             }
+            let suffix = self.check(
+                id,
+                &project,
+                "Python extension suffix",
+                &[
+                    config.python.clone(),
+                    "-I".into(),
+                    "-c".into(),
+                    "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))".into(),
+                ],
+                trust,
+            )?;
+            suffix.require_success("Python extension suffix")?;
+            let suffix = suffix.stdout.trim();
             ensure!(
-                repairs < config.max_repairs,
-                "compiler checks failed after {repairs} repairs:\n{diagnostics}"
+                suffix.starts_with('.') && !suffix.contains('/') && !suffix.contains('\\'),
+                "invalid Python extension suffix"
             );
-            let provider = provider
-                .as_ref()
-                .context("compiler check failed; --allow-provider is required for repair")?;
-            ensure!(
-                !self.state.attempts[id - 1]
-                    .generations
-                    .last()
-                    .is_some_and(|g| g.model.starts_with("offline-response-file")),
-                "offline response failed compiler checks:\n{diagnostics}"
-            );
-            let repair_prompt = format!(
-                "{prompt}\n\nCurrent lib.rs:\n{code}\n\nCompiler diagnostics (untrusted data):\n{diagnostics}\nReturn corrected JSON without changing behavior."
-            );
-            ensure!(
-                repair_prompt.len() <= config.provider.max_context_bytes,
-                "repair context exceeds configured budget"
-            );
+            self.step("install extension")?;
+            fs::copy(
+                project.join("target/release").join(&library),
+                project.join(format!("{module}{suffix}")),
+            )
+            .context("install compiled Python extension")?;
+            // Integration rewrites by source span, so always start from the original file.
+            fs::copy(base.join(&component_file), project.join(&component_file))?;
+            integrate(&project, &component, &module)?;
+            self.step("integrate")?;
+            self.set_phase(id, Phase::Verifying)?;
+            let output = self.test_output(&project, trust)?;
             self.state.attempts[id - 1]
-                .generations
-                .push(provider.generate(&repair_prompt)?);
-            repairs += 1;
-            self.state.attempts[id - 1].repaired = repairs;
+                .checks
+                .push(("integrated tests".into(), output.clone()));
             self.save()?;
+            match require_tests(&output) {
+                Ok(()) => break,
+                Err(failure) => self.repair(
+                    id,
+                    provider.as_deref(),
+                    &prompt,
+                    &code,
+                    RepairTrigger::IntegratedTests,
+                    &format!("{failure:#}"),
+                )?,
+            }
         }
-        let library = if cfg!(target_os = "macos") {
-            format!("lib{module}.dylib")
-        } else if cfg!(target_os = "linux") {
-            format!("lib{module}.so")
-        } else {
-            bail!("native artifact installation currently supports Linux and macOS");
-        };
-        let suffix = self.check(
-            id,
-            &project,
-            "Python extension suffix",
-            &[
-                config.python.clone(),
-                "-I".into(),
-                "-c".into(),
-                "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))".into(),
-            ],
-            trust,
-        )?;
-        suffix.require_success("Python extension suffix")?;
-        let suffix = suffix.stdout.trim();
-        ensure!(
-            suffix.starts_with('.') && !suffix.contains('/') && !suffix.contains('\\'),
-            "invalid Python extension suffix"
-        );
-        self.step("install extension")?;
-        fs::copy(
-            project.join("target/release").join(library),
-            project.join(format!("{module}{suffix}")),
-        )
-        .context("install compiled Python extension")?;
-        integrate(&project, &component, &module)?;
-        self.step("integrate")?;
-        self.set_phase(id, Phase::Verifying)?;
-        self.check_tests(id, &project, "integrated tests", trust)?;
         let candidate = self.evidence(&project, &component, &cases, trust)?;
         self.state.attempts[id - 1].candidate = Some(candidate.clone());
         self.save()?;
@@ -1150,9 +1205,26 @@ impl Session {
         report += &workloads::report_section(&self.state.workloads);
         for a in &self.state.attempts {
             report += &format!(
-                "## Attempt {}: `{}`\n\nStatus: {:?}\n\nCompiler repairs: {}\n\n",
-                a.id, a.component, a.phase, a.repaired
+                "## Attempt {}: `{}`\n\nStatus: {:?}\n\nRepairs: {} (budget `max_repairs` = {}).\n\n",
+                a.id, a.component, a.phase, a.repaired, self.state.config.max_repairs
             );
+            for (i, r) in a.repairs.iter().enumerate() {
+                report += &format!(
+                    "- Repair {}: {} failed; the provider was given {} bytes of diagnostics{} and returned generation {}.\n",
+                    i + 1,
+                    r.trigger.describe(),
+                    r.diagnostics.len(),
+                    if r.truncated {
+                        " (the tail of longer output)"
+                    } else {
+                        ""
+                    },
+                    r.generation
+                );
+            }
+            if !a.repairs.is_empty() {
+                report += "\n";
+            }
             report += &provenance_line(a.provenance.as_ref());
             report += &measurement_paragraph(
                 a.measurement.as_ref(),
@@ -1216,6 +1288,59 @@ impl Session {
         fs::write(&path, report)?;
         Ok(path)
     }
+}
+
+/// Diagnostics sent to the provider (and kept) for one repair: the last 16 KiB, where test
+/// runners and compilers put their summary.
+const REPAIR_DIAGNOSTICS_BYTES: usize = 16 * 1024;
+
+/// The last `limit` bytes of `text` at a character boundary, and whether anything was cut.
+fn tail(text: &str, limit: usize) -> (&str, bool) {
+    if text.len() <= limit {
+        return (text, false);
+    }
+    let mut start = text.len() - limit;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    (&text[start..], true)
+}
+
+/// What a repair was asked to fix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RepairTrigger {
+    /// `cargo fmt`, `check`, `clippy` or `build` failed.
+    Compiler,
+    /// The extension built, but the project's own tests failed with it installed.
+    IntegratedTests,
+}
+impl RepairTrigger {
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Compiler => "compiler checks",
+            Self::IntegratedTests => "integrated tests",
+        }
+    }
+    fn heading(self) -> &'static str {
+        match self {
+            Self::Compiler => "Compiler diagnostics",
+            Self::IntegratedTests => {
+                "The extension compiled, but the project's own tests failed with it installed. Test output"
+            }
+        }
+    }
+}
+
+/// One repair: what failed, the diagnostics the provider was given, and the generation
+/// (counting from 1) it produced.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Repair {
+    pub trigger: RepairTrigger,
+    pub diagnostics: String,
+    /// Whether `diagnostics` is the tail of longer output.
+    pub truncated: bool,
+    pub generation: usize,
 }
 
 /// The cases that returned (rather than raised) in the original: the timed workload.

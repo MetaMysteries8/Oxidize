@@ -326,3 +326,32 @@ Limits: with `--trust-code`, a descendant that calls `setsid()` escapes the proc
 (Bubblewrap's PID namespace doesn't have that gap). On Windows, `--trust-code` kills only the
 direct child, and these tests don't run there. Container limits are unit-tested as arguments
 only; no engine has run them yet (see the container note in HANDOFF.md).
+
+## Repair from integrated-test failures
+
+Milestone 2 §4. Repair used to cover only compiler failures. Now, when the extension builds
+but the project's own tests fail with it installed, that failure can be repaired too, from the
+same `max_repairs` budget. The provider gets the last 16 KiB of the test output, marked as
+untrusted data. Before each re-integration the component's file is restored from the
+baseline. Every repair records its trigger (`compiler` or `integrated_tests`), the diagnostics
+the provider was given, whether they were truncated, and the generation it produced. Every
+test run and each generation's token usage are kept, and the report lists the repairs. The
+loop stops when the budget is spent, when a provider repeats identical code ("repair
+stalled"), for an offline `--response` (which can't be repaired), or without
+`--allow-provider`.
+
+Evidence (`crates/oxidize-engine/tests/repair.rs`, opt-in real PyO3 builds with a local HTTP
+server standing in for the model):
+
+- Code that compiles but miscounts fails the project's tests. The repair request carries
+  that failure, the corrected code is accepted after 1 repair, and both test runs (fail, pass),
+  both generations' usage and the repair record are kept and reported.
+- A provider that returns the same wrong code again stops as stalled after 2 calls. The
+  attempt is rejected with the repair on record, nothing is accepted, and the input is unchanged.
+- With `max_repairs = 0`, the failure is rejected at once with the test output in the error,
+  after one call.
+- The existing compiler-repair test still passes through the unified loop.
+
+Limits: differential mismatches (behaviour that passes the tests but differs from the original)
+are not sent for repair. Their reasons would describe the original's outputs, and that
+evidence should stay independent of the generated code.

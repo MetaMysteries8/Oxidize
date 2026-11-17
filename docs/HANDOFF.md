@@ -10,7 +10,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
 - **`main`:** v0.1.1, the Working Foundation (Python/PyO3 path). Tagged releases are immutable.
 - **Working branch:** `milestone-2-performance-reliability`, toward v0.2.0. The plan and its
   checklist are in [MILESTONE_2.md](MILESTONE_2.md).
-- **Done on the branch** (ticked in MILESTONE_2.md with evidence; 15/20):
+- **Done on the branch** (ticked in MILESTONE_2.md with evidence; 16/20):
   - behaviour observation separated from timing (§1)
   - argument-mutation comparison (§2)
   - baseline tests run in disposable validation copies (§3)
@@ -21,6 +21,7 @@ claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS
   - fault injection at every save/step; safe resume and repeated rollback (§3, all done)
   - interleaved sampling with a noise policy; whole-application workloads with CPU/RSS (§1, all done)
   - process supervision tests; unenforceable resource limits refused (§4)
+  - repair from integrated-test failures with a recorded repair history (§4, all done)
 - **CI:** Linux (fmt, Clippy, tests, native PyO3 tests) plus blocking macOS/Windows build+tests.
 - **Baseline, 2026-11-15** (Linux, Rust 1.100.0, Python 3.13): `cargo build --locked
   --workspace` OK, `cargo test --locked --workspace` gave 20 passed, 0 failed, 3 ignored (the
@@ -142,3 +143,4 @@ language to Rust.
 - 2026-11-16 · Claude · §3 done (fault injection; resume/rollback safety). Fixed three bugs the tests found: an attempt-start write failure left no rejection; a resume kept the previous run's speedup; resuming with the same response duplicated the generation. Also: finished attempts drop their `target/` (the native test filled a 3.4 GB tmpfs without it). Standard fault tests: 6 passed; opt-in native: 21/21 points.
 - 2026-11-16 · Claude · §1 done: interleaved sampling decides acceptance (raw samples kept, inconclusive = no claim), plus `oxidize workloads` with wall/CPU/peak RSS. Standard: 68 passed / 7 ignored; native engine/comparison/file-effect suites with `--include-ignored`: 22 passed. One host's workload figure: `main.py 30000` wall 1.97x.
 - 2026-11-16 · Claude · §4 supervision: orphan/timeout/cancellation heartbeat tests (incl. a setsid escapee inside Bubblewrap); container-only limits are now refused, not silently ignored, under Bubblewrap/--trust-code. Core tests: 25 passed.
+- 2026-11-16 · Claude · §4 repair: integrated-test failures are repaired within `max_repairs`; per-repair trigger/diagnostics recorded and reported. Native repair tests 3/3 (local HTTP provider), engine native 11/11, standard 73 passed / 10 ignored.

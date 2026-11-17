@@ -6,6 +6,10 @@
 - Defined ordered Performance and Reliability slices and observable acceptance criteria in [the milestone-two plan](docs/MILESTONE_2.md).
 - Reserved the development version and updated README status. No new runtime features are implemented by this preparation commit.
 
+### Repair
+
+- Integrated-test failures can be repaired from the same `max_repairs` budget as compiler failures (the provider gets the test output's last 16 KiB as untrusted data). Each attempt keeps a `repairs` history (trigger, diagnostics, generation), and the report lists it.
+
 ### Process supervision
 
 - `execution.memory_mb`, `pids_limit` and `cpus` were silently ignored outside containers; a Bubblewrap or `--trust-code` run with any of them set is now refused by name.
