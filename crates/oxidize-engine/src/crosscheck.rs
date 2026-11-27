@@ -425,6 +425,24 @@ impl Checker<'_> {
     }
 }
 
+/// The per-project crosscheck lock, released explicitly on drop.
+struct Lock(fs::File);
+impl Lock {
+    fn acquire(path: &Path) -> Result<Self> {
+        let file = fs::File::create(path)?;
+        fs2::FileExt::try_lock_exclusive(&file)
+            .context("another crosscheck is running for this project")?;
+        Ok(Self(file))
+    }
+}
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // Closing our descriptor is not enough while a child forked by another thread still
+        // holds the same open-file description between fork and exec (see `Session`).
+        let _ = fs2::FileExt::unlock(&self.0);
+    }
+}
+
 /// Crosscheck every configured command in `root` and save the evidence as
 /// `.oxidize/crosscheck.json` and `.oxidize/crosscheck.md`.
 pub fn run(root: &Path, config: &Config, trust: bool) -> Result<Crosscheck> {
@@ -440,9 +458,7 @@ pub fn run(root: &Path, config: &Config, trust: bool) -> Result<Crosscheck> {
     let scratch = directory.join("crosscheck");
     fs::create_dir_all(&scratch)?;
     // One crosscheck per project at a time: they share the copy's path.
-    let lock = fs::File::create(scratch.join("lock"))?;
-    fs2::FileExt::try_lock_exclusive(&lock)
-        .context("another crosscheck is running for this project")?;
+    let _lock = Lock::acquire(&scratch.join("lock"))?;
     let checker = Checker {
         root: root.clone(),
         config,
@@ -692,6 +708,21 @@ mod tests {
         assert!(compare(&a, &b, &loose).is_empty());
         b.stdout = "a\nc\n".into();
         assert_eq!(compare(&a, &b, &loose).len(), 1, "content still counts");
+    }
+
+    #[test]
+    fn the_lock_is_released_even_with_an_inherited_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lock");
+        let lock = Lock::acquire(&path).unwrap();
+        // A duplicate models a descriptor a forked child holds before exec closes it.
+        let inherited = lock.0.try_clone().unwrap();
+        assert!(Lock::acquire(&path).is_err());
+        drop(lock);
+        let again = Lock::acquire(&path).unwrap();
+        drop(inherited);
+        drop(again);
+        assert!(Lock::acquire(&path).is_ok());
     }
 
     #[test]
