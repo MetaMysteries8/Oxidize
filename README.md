@@ -48,15 +48,15 @@ Python is the only implemented migration adapter. JavaScript/TypeScript, Go, Rus
 
 ## Oxidize + rust-anything
 
-> **Trust your agent? Use rust-anything. Want proof? Add Oxidize. Want both? Meld.**
+> **Port fast with rust-anything. Get a second opinion from Oxidize. Run both with Meld.**
 
-Apparently we had a similar idea at a similar moment. [rust-anything](https://github.com/erkamyaman/rust-anything), by erKam Yaman, also ports apps to Rust piece by piece and checks each step against the original. It came out a day after Oxidize, and the two were built separately. Neither is the "better" one: each is for a different level of trust, and they work well together.
+Apparently we had a similar idea at a similar moment. [rust-anything](https://github.com/erkamyaman/rust-anything), by erKam Yaman, also ports apps to Rust piece by piece and checks each step against the original. It came out a day after Oxidize, and the two were built separately. Neither is the "better" one: both check ports against the original, they're good at different things, and they work well together.
 
-- **rust-anything is the "I trust my agent" layer.** It's built for speed: the agent ports quickly across eleven languages, and rust-anything's own checks decide when a port is done.
-- **Oxidize is the "I want safety" layer.** Nothing runs outside a sandbox without your permission, every step can be rolled back, and a speedup is only reported when the timing shows it.
-- **Meld**, a planned sublayer that ships with Oxidize, moves you between the two: let the agent run freely, then pass a port through Oxidize before relying on it.
+- **rust-anything is the porting layer.** It's built for speed and breadth: the agent ports quickly across many languages, and rust-anything checks each port against the original with recorded cases, shadow mode and its gate.
+- **Oxidize is the second-opinion layer.** It checks a port independently, from outside the porting tool: nothing runs outside a sandbox without your permission, the whole app is compared including the files it writes, every step can be rolled back, and a speedup is only reported when the timing shows it.
+- **Meld**, a planned sublayer that ships with Oxidize, moves you between the two: let rust-anything port and check, then have Oxidize confirm the result before you rely on it.
 
-The names fit, too. Oxidation is slow, and Oxidize is named for that: controlled oxidation, one component at a time, checked and reversible. rust-anything is "rust it now", like pointing a wand at the codebase. Its first name was *carcinize*, after the joke that everything eventually evolves into a crab, so its pitch is "become a crab right now." Rust it now, or oxidize it properly. Or Meld both.
+The names fit, too. Oxidation is slow, and Oxidize is named for that: controlled oxidation, one component at a time, checked and reversible. rust-anything is "rust it now", like pointing a wand at the codebase. Its first name was *carcinize*, after the joke that everything eventually evolves into a crab, so its pitch is "become a crab right now." Rust it now, or oxidize it slowly. Or Meld both.
 
 You can combine them today. Port with rust-anything, then let Oxidize give a sandboxed second opinion on the whole app. `oxidize crosscheck` runs your command with the port off and on, compares output and the files it writes, and times only what agrees:
 

@@ -6,15 +6,17 @@ at every step that it still behaves the same. They were built separately (Oxidiz
 was created on 2026-11-15, rust-anything's on 2026-11-16), and they're good at different things,
 so they work well together instead of competing.
 
-> Trust your agent? Use rust-anything. Want proof? Add Oxidize. Want both? Meld.
+> Port fast with rust-anything. Get a second opinion from Oxidize. Run both with Meld.
 
-- **rust-anything is the "I trust my agent" layer:** the agent ports quickly across eleven
-  languages, and rust-anything's own checks decide when a port is done.
-- **Oxidize is the "I want safety" layer:** nothing runs outside a sandbox without your
-  permission, every step can be rolled back, and a speedup is only reported when the timing
-  shows it.
-- **Meld** (planned) moves you between them: let the agent run freely, then pass a port
-  through Oxidize before relying on it.
+- **rust-anything is the porting layer:** the agent ports quickly across many languages, and
+  rust-anything checks each port against the original with recorded cases, shadow mode and
+  its gate.
+- **Oxidize is the second-opinion layer:** it checks a port independently, from outside the
+  porting tool. Nothing runs outside a sandbox without your permission, the whole app is
+  compared including the files it writes, every step can be rolled back, and a speedup is only
+  reported when the timing shows it.
+- **Meld** (planned) moves you between them: let rust-anything port and check, then have
+  Oxidize confirm the result before you rely on it.
 
 | | rust-anything | Oxidize |
 | --- | --- | --- |
