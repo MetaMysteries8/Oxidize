@@ -102,7 +102,7 @@ language to Rust.
   Built `oxidize crosscheck` on `rust-anything-companion` as the first bridge between the two,
   with docs and the Meld roadmap entry. Baseline on the owner's Windows machine (Rust 1.100.0,
   Python 3.13): fmt and Clippy clean, `cargo test --locked --workspace` all passing (79 passed,
-  9 ignored), including 16 new crosscheck tests. Flaky locally: on the first two runs after
+  9 ignored), including 15 new crosscheck tests. Flaky locally: on the first two runs after
   cloning, 2 tests in `oxidize-engine/tests/engine.rs` (fingerprint equality after `benchmark`)
   failed before any change; they passed on every run after that. CI was green on Windows for
   `main`. Not investigated.
