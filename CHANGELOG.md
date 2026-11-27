@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### rust-anything companion
+
+- `oxidize crosscheck`: a second opinion on a port the app switches on and off with an
+  environment variable, rust-anything's `RUST_ANYTHING_MODE=old|new` by default. Each command
+  runs both ways in fresh disposable copies at one fixed path (sandboxed unless `--trust-code`),
+  with rust-anything crates' built native modules and any `include` paths copied in. Exit code,
+  stdout, stderr and listed files (presence, length, SHA-256) are compared. Only commands that
+  agree and exit 0 are timed, in interleaved rounds under the noise policy. Evidence goes to
+  `.oxidize/crosscheck.json` and `.oxidize/crosscheck.md`, and a difference exits 2. New
+  `[crosscheck]` configuration section, validated: the switch can't replace a variable the
+  runner sets, and the original and port values must differ.
+- README "Oxidize + rust-anything" section (rust-anything for trusting your agent, Oxidize for proof, Meld for both) and [docs/RUST_ANYTHING.md](docs/RUST_ANYTHING.md); Meld
+  (Oxidize + rust-anything orchestration) added to the roadmap as planned.
+
 ## v0.2.0 — Performance and Reliability (2026-11-17)
 
 Milestone 2, complete: all 20 checklist items with evidence, and the

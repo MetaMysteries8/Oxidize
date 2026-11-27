@@ -3,13 +3,15 @@
 Where the work stands, for whoever picks it up next. Keep this current: update it when you
 claim work, finish a slice, or hand off (see `CRAB OUT` in [AGENTS.md](../AGENTS.md)).
 
-**Last updated:** 2026-11-17, by Claude.
+**Last updated:** 2026-11-27, by Claude.
 
 ## State
 
 - **`main`:** v0.2.0, Performance and Reliability (Python/PyO3 path). Earlier releases: v0.1.0,
   v0.1.1. Tagged releases are immutable.
-- **Working branch:** none yet. Start Milestone 3 on a new branch off `main` once it is planned.
+- **Working branch:** `rust-anything-companion` (off `main`, local only, not pushed): `oxidize
+  crosscheck` plus the README/roadmap rust-anything and Meld docs. Start Milestone 3 on its own
+  branch off `main` once it is planned.
 - **Milestone 2, released in v0.2.0** ([MILESTONE_2.md](MILESTONE_2.md), 20/20 with evidence):
   - behaviour observation separated from timing (§1)
   - argument-mutation comparison (§2)
@@ -51,19 +53,28 @@ Claim work here: `- <who> · <what> · <date started>`
 
 In rough order:
 
-1. **Plan Milestone 3** (more source languages, JavaScript/TypeScript and Go first, per
+1. **Crosscheck against a real rust-anything port:** install rust-anything (needs the owner's
+   yes), port one function of a small app (its `demo/fixtures/python-textkit-rs` is a good
+   start), `rust-anything enable` it, then run `oxidize crosscheck` sandboxed on Linux and
+   `--trust-code` on Windows. Fix what breaks (likely: the Windows runner's reduced environment
+   for Node/npm, and native modules outside `target/release`). Record it in VERIFICATION.md.
+2. **Meld** (planned, not started; see [ROADMAP.md](ROADMAP.md#meld-oxidize--rust-anything-orchestration)):
+   a layer that ships with Oxidize so it and rust-anything can orchestrate each other. Write a
+   design and an acceptance checklist before implementing anything.
+
+3. **Plan Milestone 3** (more source languages, JavaScript/TypeScript and Go first, per
    [ROADMAP.md](ROADMAP.md)): write `docs/MILESTONE_3.md` with an acceptance checklist, like
    Milestone 2's, before implementing anything.
-2. **Container sandbox validation:** run the sandboxed native demo with
+4. **Container sandbox validation:** run the sandboxed native demo with
    `execution.sandbox = "podman"` (or `"docker"`) and a toolchain image pinned by digest;
    fix whatever breaks (likely candidates: the offline Cargo registry inside the image,
    PyO3 finding the image's Python, and Podman's SELinux volume labels). The backend is
    implemented and unit-tested (`crates/oxidize-core/src/process.rs`), but no engine has
    run it yet. Installing Podman or Docker needs the owner's yes; vet it first.
-3. **Windows:** the portability gate (`cargo check --target x86_64-pc-windows-msvc`) and
+5. **Windows:** the portability gate (`cargo check --target x86_64-pc-windows-msvc`) and
    proof on a real Windows host. See [ROADMAP.md](ROADMAP.md#platforms-portable-by-construction-proven-per-platform).
 
-4. **ACP provider** (planned in ROADMAP.md): drive the user's own coding agent over the Agent
+6. **ACP provider** (planned in ROADMAP.md): drive the user's own coding agent over the Agent
    Client Protocol, with no write or terminal permissions for the agent.
 
 The long-term direction: more source languages (JavaScript/TypeScript
@@ -85,6 +96,16 @@ language to Rust.
   messages, import output, argument snapshots, dictionary keys or order.
 
 ## Handoff history
+
+- 2026-11-27 · Claude · Compared Oxidize with rust-anything (erkamyaman/rust-anything, created
+  a day after Oxidize): no shared code beyond boilerplate, no shared terms, and a different design.
+  Built `oxidize crosscheck` on `rust-anything-companion` as the first bridge between the two,
+  with docs and the Meld roadmap entry. Baseline on the owner's Windows machine (Rust 1.100.0,
+  Python 3.13): fmt and Clippy clean, `cargo test --locked --workspace` all passing (79 passed,
+  9 ignored), including 16 new crosscheck tests. Flaky locally: on the first two runs after
+  cloning, 2 tests in `oxidize-engine/tests/engine.rs` (fingerprint equality after `benchmark`)
+  failed before any change; they passed on every run after that. CI was green on Windows for
+  `main`. Not investigated.
 
 - 2026-11-15 · Claude · Created AGENTS.md (contributor and agent rules, the `CRAB OUT`
   codeword) and this file; checked the baseline; hardened `.gitignore` for contributors.
