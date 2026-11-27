@@ -102,3 +102,40 @@ fn config_init_does_not_overwrite() {
     assert!(!second.status.success());
     assert_eq!(old, fs::read(dir.path().join("oxidize.toml")).unwrap());
 }
+
+/// `oxidize crosscheck`: the command after `--` runs both ways; a difference exits 2, so CI
+/// and coding agents can gate on it.
+#[test]
+fn crosscheck_exits_2_when_the_port_behaves_differently() {
+    let python = if Command::new("python3")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+    {
+        "python3"
+    } else {
+        "python"
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let crosscheck = |app: &str| {
+        fs::write(dir.path().join("app.py"), app).unwrap();
+        Command::new(env!("CARGO_BIN_EXE_oxidize"))
+            .arg("crosscheck")
+            .arg(dir.path())
+            .args(["--no-timing", "--trust-code", "--", python, "app.py"])
+            .output()
+            .unwrap()
+    };
+    let same = crosscheck("print('same')\n");
+    let stdout = String::from_utf8_lossy(&same.stdout);
+    assert_eq!(same.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.contains("Every command behaved the same"),
+        "{stdout}"
+    );
+    let different = crosscheck("import os\nprint(os.environ['RUST_ANYTHING_MODE'])\n");
+    let stdout = String::from_utf8_lossy(&different.stdout);
+    assert_eq!(different.status.code(), Some(2), "{stdout}");
+    assert!(stdout.contains("The port behaves differently"), "{stdout}");
+    assert!(dir.path().join(".oxidize/crosscheck.json").is_file());
+}

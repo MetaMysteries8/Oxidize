@@ -41,9 +41,30 @@ Validation for v0.2.0: at the milestone's completion gate, **77 standard tests p
 - Integrated-test failures are repaired within the same `max_repairs` budget as compiler failures, and each repair's trigger and diagnostics are recorded and reported.
 - Reports open with a per-attempt summary (status, speed with range or no claim, repairs, reason) and are tested for accepted, rejected, interrupted and rolled-back sessions.
 - Linux Bubblewrap runner that fails closed when unavailable, [validated end to end](docs/VERIFICATION.md#sandboxed-native-demo) on Ubuntu, and an explicit `--trust-code` escape hatch for code the user authorizes running without OS isolation. Child-process time/output limits, cancellation, reduced environment, no shell interpolation. Normal exit, timeout and cancellation leave no running descendant ([tested](docs/VERIFICATION.md#process-supervision)). Container resource limits are refused, not ignored, when the backend can't enforce them. The Podman/Docker backends are unit-tested but not yet run against a real engine.
+- [`oxidize crosscheck`](docs/RUST_ANYTHING.md): a second opinion on a port that the app switches on and off with an environment variable, such as a [rust-anything](https://github.com/erkamyaman/rust-anything) port (`RUST_ANYTHING_MODE=old|new`) in any language. Each command runs both ways in fresh disposable copies, sandboxed unless `--trust-code`. Exit code, stdout, stderr and listed files are compared, and only commands that agree are timed, interleaved, under the noise policy. Exits 2 on a difference. Tested with small Python programs that read the switch, not yet against a real rust-anything port.
 - Portable [agent skill](skills/oxidize/SKILL.md) with CLI-assisted and agent-native workflows, local installer, references, and agent-specific installation instructions.
 
 Python is the only implemented migration adapter. JavaScript/TypeScript, Go, Rust and a few other languages are **detected only**. Hyperoxidize, automatic multi-component selection/repetition, package modules, async/decorated/generator/default/variadic signatures, alternate native provider protocols, cloning remote URLs, Git/PR automation, and full entrypoint/runtime removal are not implemented. No command pretends otherwise.
+
+## Oxidize + rust-anything
+
+> **Trust your agent? Use rust-anything. Want proof? Add Oxidize. Want both? Meld.**
+
+Apparently we had a similar idea at a similar moment. [rust-anything](https://github.com/erkamyaman/rust-anything), by erKam Yaman, also ports apps to Rust piece by piece and checks each step against the original. It came out a day after Oxidize, and the two were built separately. Neither is the "better" one: each is for a different level of trust, and they work well together.
+
+- **rust-anything is the "I trust my agent" layer.** It's built for speed: the agent ports quickly across eleven languages, and rust-anything's own checks decide when a port is done.
+- **Oxidize is the "I want safety" layer.** Nothing runs outside a sandbox without your permission, every step can be rolled back, and a speedup is only reported when the timing shows it.
+- **Meld**, a planned sublayer that ships with Oxidize, moves you between the two: let the agent run freely, then pass a port through Oxidize before relying on it.
+
+The names fit, too. Oxidation is slow, and Oxidize is named for that: controlled oxidation, one component at a time, checked and reversible. rust-anything is "rust it now", like pointing a wand at the codebase. Its first name was *carcinize*, after the joke that everything eventually evolves into a crab, so its pitch is "become a crab right now." Rust it now, or oxidize it properly. Or Meld both.
+
+You can combine them today. Port with rust-anything, then let Oxidize give a sandboxed second opinion on the whole app. `oxidize crosscheck` runs your command with the port off and on, compares output and the files it writes, and times only what agrees:
+
+```bash
+oxidize crosscheck path/to/app --file out/report.json -- python3 app.py build
+```
+
+See [Oxidize and rust-anything](docs/RUST_ANYTHING.md) for how it works, configuration and limits, and the [roadmap](docs/ROADMAP.md#meld-oxidize--rust-anything-orchestration) for Meld.
 
 ## Build
 

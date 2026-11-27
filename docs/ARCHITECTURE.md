@@ -6,7 +6,7 @@
 
 `oxidize-providers`: a provider trait, OpenAI-compatible blocking HTTP client, explicit offline response provider, typed code/usage records. The engine owns orchestration rather than allowing a model to issue arbitrary commands or dependency changes.
 
-`oxidize-engine`: session lock, versioned state, immutable baseline and separate attempt copies, selected context, fixed PyO3 crate generation, compiler-guided repair, source replacement, independent tests, typed differential comparisons, warmed measurement, acceptance, reports, replay and rollback.
+`oxidize-engine`: session lock, versioned state, immutable baseline and separate attempt copies, selected context, fixed PyO3 crate generation, compiler-guided repair, source replacement, independent tests, typed differential comparisons, warmed measurement, acceptance, reports, replay and rollback. `crosscheck` is separate from sessions: it never takes the session lock or touches `state.json`. It runs application commands with a port switch in each position, every run in a fresh copy at one fixed path (`.oxidize/crosscheck/work/project`, under its own lock), and compares results before reusing the workload wrapper and sampling policy for timing.
 
 `oxidize-cli`: Clap commands and explicit source-transmission/execution flags, cancellation handler, printed output workspace/report locations. No simulated commands for future features.
 

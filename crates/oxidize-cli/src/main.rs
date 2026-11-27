@@ -100,6 +100,44 @@ enum Action {
         project: PathBuf,
     },
     Providers,
+    /// Second opinion on a port the app switches on and off (rust-anything's
+    /// RUST_ANYTHING_MODE=old|new by default): run each command both ways in disposable
+    /// copies, compare exit code, stdout, stderr and listed files, and time only what agrees.
+    /// Exits 2 when the two runs differ.
+    Crosscheck {
+        #[arg(default_value = ".")]
+        project: PathBuf,
+        /// Environment variable that switches the port [default: RUST_ANYTHING_MODE].
+        #[arg(long)]
+        switch: Option<String>,
+        /// The switch's value for the original [default: old].
+        #[arg(long)]
+        original: Option<String>,
+        /// The switch's value for the port [default: new].
+        #[arg(long)]
+        candidate: Option<String>,
+        /// A file the command writes, compared by presence, length and SHA-256 (repeatable).
+        #[arg(long = "file")]
+        files: Vec<String>,
+        /// A path snapshots skip that the command needs, such as node_modules (repeatable).
+        #[arg(long)]
+        include: Vec<String>,
+        /// Compare stdout and stderr with CRLF and LF treated as the same.
+        #[arg(long)]
+        normalize_line_endings: bool,
+        /// Do not compare stderr.
+        #[arg(long)]
+        ignore_stderr: bool,
+        /// Compare behaviour only; skip the interleaved timing.
+        #[arg(long)]
+        no_timing: bool,
+        /// Run the commands without OS isolation. Only for code you trust.
+        #[arg(long)]
+        trust_code: bool,
+        /// The command to run, after `--`; replaces any [[crosscheck.commands]].
+        #[arg(last = true)]
+        command: Vec<String>,
+    },
 }
 fn main() {
     if let Err(error) = run() {
@@ -227,6 +265,56 @@ fn run() -> Result<()> {
         Action::Report { project } => {
             let session = Session::open(&project)?;
             println!("{}", session.report()?.display());
+        }
+        Action::Crosscheck {
+            project,
+            switch,
+            original,
+            candidate,
+            files,
+            include,
+            normalize_line_endings,
+            ignore_stderr,
+            no_timing,
+            trust_code,
+            command,
+        } => {
+            ensure!(project.is_dir(), "project directory does not exist");
+            let mut config = if project.join("oxidize.toml").exists() {
+                Config::load(&project)?
+            } else {
+                Config::default()
+            };
+            let c = &mut config.crosscheck;
+            if let Some(switch) = switch {
+                c.switch = switch;
+            }
+            if let Some(original) = original {
+                c.original = original;
+            }
+            if let Some(candidate) = candidate {
+                c.candidate = candidate;
+            }
+            c.file_paths.extend(files);
+            c.include.extend(include);
+            c.normalize_line_endings |= normalize_line_endings;
+            c.compare_stderr &= !ignore_stderr;
+            c.timing &= !no_timing;
+            if !command.is_empty() {
+                c.commands = vec![oxidize_core::WorkloadConfig {
+                    name: "command".into(),
+                    command,
+                }];
+            }
+            let result = oxidize_engine::crosscheck::run(&project, &config, trust_code)?;
+            print!("{}", oxidize_engine::crosscheck::markdown(&result));
+            println!(
+                "Evidence: {}",
+                project.join(".oxidize").join("crosscheck.json").display()
+            );
+            if !result.agree {
+                std::process::exit(2);
+            }
         }
         Action::Providers => println!(
             "openai-compatible: cloud HTTPS or local loopback HTTP /v1/chat/completions\nresponse-file: explicit offline implementation input; does not call an AI model\nOther provider protocols are not implemented."

@@ -19,6 +19,9 @@ pub struct Config {
     pub performance: PerformanceConfig,
     pub execution: ExecutionConfig,
     pub max_repairs: usize,
+    /// `oxidize crosscheck`: a second opinion on a port that the app switches on and off with
+    /// an environment variable (rust-anything's `RUST_ANYTHING_MODE` by default).
+    pub crosscheck: CrosscheckConfig,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -29,6 +32,7 @@ impl Default for Config {
             performance: PerformanceConfig::default(),
             execution: ExecutionConfig::default(),
             max_repairs: 2,
+            crosscheck: CrosscheckConfig::default(),
         }
     }
 }
@@ -188,6 +192,161 @@ impl Default for ExecutionConfig {
     }
 }
 
+/// `oxidize crosscheck`: run the same application commands with a port switched off and on,
+/// in disposable copies, and compare what they do; time them only when they agree.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CrosscheckConfig {
+    /// The environment variable that switches between the original and the port.
+    pub switch: String,
+    /// The switch's value that runs the original.
+    pub original: String,
+    /// The switch's value that runs the port.
+    pub candidate: String,
+    /// Application commands, run from the project root of each disposable copy.
+    pub commands: Vec<WorkloadConfig>,
+    /// Regular files (relative to the project root) whose presence, length and SHA-256 must
+    /// match after each command.
+    pub file_paths: Vec<String>,
+    /// Paths snapshots normally skip (such as `node_modules` or `.venv`) that the commands
+    /// need, copied into each disposable copy. Symlinks inside them are skipped and reported.
+    pub include: Vec<String>,
+    /// Compare stderr as well as the exit code and stdout.
+    pub compare_stderr: bool,
+    /// Treat CRLF and LF as the same in stdout and stderr.
+    pub normalize_line_endings: bool,
+    /// Time commands that agree, in interleaved rounds, with `[performance]`'s policy.
+    pub timing: bool,
+}
+impl Default for CrosscheckConfig {
+    fn default() -> Self {
+        Self {
+            switch: "RUST_ANYTHING_MODE".into(),
+            original: "old".into(),
+            candidate: "new".into(),
+            commands: vec![],
+            file_paths: vec![],
+            include: vec![],
+            compare_stderr: true,
+            normalize_line_endings: false,
+            timing: true,
+        }
+    }
+}
+
+/// Environment variables the runner sets or passes through itself; a crosscheck switch must
+/// not replace them.
+const RESERVED_VARIABLES: &[&str] = &[
+    "PATH",
+    "HOME",
+    "CARGO_HOME",
+    "CARGO_TARGET_DIR",
+    "RUSTUP_HOME",
+    "PYO3_PYTHON",
+    "CC",
+    "AR",
+    "SYSTEMROOT",
+    "TMPDIR",
+    "PYTHONDONTWRITEBYTECODE",
+    "PYTHONHASHSEED",
+    "XDG_RUNTIME_DIR",
+    "DOCKER_HOST",
+    "DOCKER_CONTEXT",
+    "CONTAINER_HOST",
+];
+
+/// Whether one file or folder name is version control, Oxidize state or credential-like. These are
+/// never snapshotted, observed or copied into a workspace.
+pub fn reserved_or_credential_name(name: &str) -> bool {
+    matches!(
+        name,
+        ".git" | ".oxidize" | ".ssh" | ".aws" | ".cargo" | ".rustup"
+    ) || name.starts_with(".env")
+        || name.ends_with(".pem")
+        || name.ends_with(".key")
+}
+
+/// Whether any component of `path` names version control, Oxidize state or credentials.
+fn credential_like(path: &Path) -> bool {
+    path.components()
+        .any(|part| reserved_or_credential_name(&part.as_os_str().to_string_lossy()))
+}
+
+/// Workload and crosscheck command names: 1..64 characters, unique, with non-empty commands.
+fn validate_commands(commands: &[WorkloadConfig], what: &str) -> Result<()> {
+    ensure!(commands.len() <= 16, "at most 16 {what}");
+    let mut names = std::collections::BTreeSet::new();
+    for w in commands {
+        ensure!(
+            !w.name.is_empty()
+                && w.name.len() <= 64
+                && w.name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)),
+            "{what} names must be 1..64 characters of letters, digits, '-', '_' or '.'"
+        );
+        ensure!(names.insert(&w.name), "duplicate {what} name {:?}", w.name);
+        ensure!(
+            !w.command.is_empty() && w.command.iter().all(|a| !a.is_empty()),
+            "{what} {:?} needs a non-empty command",
+            w.name
+        );
+    }
+    Ok(())
+}
+
+/// Bounded, unique, safe relative paths that name no credentials.
+fn validate_paths(paths: &[String], what: &str) -> Result<()> {
+    ensure!(paths.len() <= 32, "at most 32 {what} may be listed");
+    for (index, value) in paths.iter().enumerate() {
+        ensure!(value.len() <= 1024, "{what} entry exceeds 1024 bytes");
+        let path = safe_relative(value)?;
+        ensure!(
+            !paths[..index].contains(value),
+            "duplicate {what} entry: {value}"
+        );
+        ensure!(
+            !credential_like(&path),
+            "reserved or credential-like {what} entry: {value}"
+        );
+    }
+    Ok(())
+}
+
+impl CrosscheckConfig {
+    pub fn validate(&self) -> Result<()> {
+        let s = &self.switch;
+        ensure!(
+            !s.is_empty()
+                && s.len() <= 64
+                && s.chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase() || c == '_')
+                && s.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'),
+            "crosscheck.switch must be an environment variable name: A-Z, 0-9 and '_', up to 64 characters"
+        );
+        ensure!(
+            !RESERVED_VARIABLES.contains(&s.as_str()),
+            "crosscheck.switch must not be {s}: the runner sets or passes it itself"
+        );
+        for (what, value) in [("original", &self.original), ("candidate", &self.candidate)] {
+            ensure!(
+                value.len() <= 256 && !value.contains('\0'),
+                "crosscheck.{what} must be at most 256 bytes with no NUL"
+            );
+        }
+        ensure!(
+            self.original != self.candidate,
+            "crosscheck.original and crosscheck.candidate must differ, or both runs are the same"
+        );
+        validate_commands(&self.commands, "crosscheck commands")?;
+        validate_paths(&self.file_paths, "crosscheck.file_paths")?;
+        validate_paths(&self.include, "crosscheck.include")?;
+        Ok(())
+    }
+}
+
 /// The isolation backend for builds and tests (`--trust-code` bypasses all of them).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -210,30 +369,7 @@ impl Config {
     }
     pub fn validate(&self) -> Result<()> {
         self.verification.comparison.validate()?;
-        ensure!(
-            self.verification.file_effect_paths.len() <= 32,
-            "at most 32 file-effect paths may be observed"
-        );
-        for (index, value) in self.verification.file_effect_paths.iter().enumerate() {
-            let path = safe_relative(value)?;
-            ensure!(value.len() <= 1024, "file-effect path exceeds 1024 bytes");
-            ensure!(
-                !self.verification.file_effect_paths[..index].contains(value),
-                "duplicate file-effect path: {value}"
-            );
-            for part in path.components() {
-                let name = part.as_os_str().to_string_lossy();
-                ensure!(
-                    !matches!(
-                        name.as_ref(),
-                        ".git" | ".oxidize" | ".ssh" | ".aws" | ".cargo" | ".rustup"
-                    ) && !name.starts_with(".env")
-                        && !name.ends_with(".pem")
-                        && !name.ends_with(".key"),
-                    "reserved or credential-like file-effect path"
-                );
-            }
-        }
+        validate_paths(&self.verification.file_effect_paths, "file-effect paths")?;
         ensure!(!self.python.is_empty(), "python executable is empty");
         ensure!(
             !self.verification.test_command.is_empty(),
@@ -259,31 +395,8 @@ impl Config {
                 && self.performance.max_relative_mad <= 10.0,
             "performance.max_relative_mad must be greater than 0 and at most 10"
         );
-        ensure!(
-            self.performance.workloads.len() <= 16,
-            "at most 16 performance.workloads"
-        );
-        let mut names = std::collections::BTreeSet::new();
-        for w in &self.performance.workloads {
-            ensure!(
-                !w.name.is_empty()
-                    && w.name.len() <= 64
-                    && w.name
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)),
-                "workload names must be 1..64 characters of letters, digits, '-', '_' or '.'"
-            );
-            ensure!(
-                names.insert(&w.name),
-                "duplicate workload name {:?}",
-                w.name
-            );
-            ensure!(
-                !w.command.is_empty() && w.command.iter().all(|a| !a.is_empty()),
-                "workload {:?} needs a non-empty command",
-                w.name
-            );
-        }
+        validate_commands(&self.performance.workloads, "performance.workloads")?;
+        self.crosscheck.validate()?;
         ensure!(
             self.performance.minimum_speedup.is_finite() && self.performance.minimum_speedup > 0.0,
             "minimum_speedup must be positive and finite"
@@ -438,6 +551,24 @@ pub fn fingerprint(root: &Path) -> Result<String> {
 }
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+/// The length and SHA-256 of a file, read in bounded chunks so a huge file can't exhaust memory.
+pub fn digest_file(path: &Path) -> Result<(u64, String)> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0; 64 * 1024];
+    let mut length = 0u64;
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+        length += n as u64;
+    }
+    Ok((length, format!("{:x}", hasher.finalize())))
 }
 
 pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {

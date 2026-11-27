@@ -46,6 +46,48 @@ Still open from this area, for later milestones:
 - Large-repository incremental indexing/cache and terminal dashboard with actual metrics.
 - External-agent discovery/invocation tests and live-model migrations gated behind explicit opt-in credentials.
 
+## Meld: Oxidize + rust-anything orchestration
+
+[rust-anything](https://github.com/erkamyaman/rust-anything) had the same idea at the same moment,
+with different strengths (see [Oxidize and rust-anything](RUST_ANYTHING.md)). The first bridge is
+delivered: `oxidize crosscheck` runs an app with `RUST_ANYTHING_MODE=old` and `new` in sandboxed
+disposable copies, compares what it does and times only what agrees.
+
+rust-anything is the "I trust my agent" layer (fast, eleven languages, its own checks decide
+when a port is done); Oxidize is the "I want safety" layer (sandboxed unless you permit
+otherwise, reversible, speed claimed only when timing shows it).
+
+**Planned: Meld**, a sublayer that is part of Oxidize and ships with it, moving you between the
+two layers without glue scripts: let the agent run freely, then pass a port through Oxidize
+before relying on it. Not started. The intended flow, per unit:
+
+```text
+rust-anything plan, bridge, record
+  -> oxidize crosscheck  (sandboxed old/new runs; output and written files compared; interleaved timing)
+  -> done only when rust-anything gate AND the crosscheck pass
+  -> Oxidize checkpoints the unit, so it can be rolled back
+  -> one combined report
+```
+
+Ideas, each needing a design and real end-to-end fixtures before any claim:
+
+- **Discovery:** find rust-anything ports (`rust-anything.json`), their recorded cases
+  (`cases.jsonl`) and their enable/shadow state, and show them next to Oxidize sessions.
+- **Shared evidence:** convert rust-anything's recorded cases for Python functions into Oxidize
+  differential cases, and Oxidize's accepted evidence into something rust-anything's report can
+  cite.
+- **One pipeline:** the flow above, with each step's result recorded in an Oxidize checkpoint
+  so the sequence can be resumed or rolled back, and one report combining rust-anything's gate
+  and report with Oxidize's crosscheck evidence.
+- **Routing:** send a Python function to Oxidize's sandboxed PyO3 path or to rust-anything's
+  bridge, whichever fits it (for example by rust-anything's readiness score and Oxidize's
+  analysis), and record why.
+- **Agents:** one skill/MCP entry that exposes both tools' steps, keeping Oxidize's rules: no
+  source sent anywhere without opt-in, project code sandboxed unless `--trust-code`.
+
+Meld must call rust-anything as an external, user-installed tool through its CLI or MCP server,
+never vendor or copy its code, and never claim more than both tools' evidence shows.
+
 ## Platforms: portable by construction, proven per platform
 
 A port that must run on Windows (or macOS) can't be proven in a Linux sandbox: a Linux

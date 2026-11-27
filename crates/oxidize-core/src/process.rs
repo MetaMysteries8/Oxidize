@@ -44,9 +44,15 @@ pub fn cancelled() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Output {
     pub code: Option<i32>,
+    /// Decoded for reports; invalid UTF-8 becomes U+FFFD, so compare `stdout_bytes` instead.
     pub stdout: String,
     pub stderr: String,
     pub elapsed_ms: f64,
+    /// The exact bytes, for comparisons. Not saved with checkpoints.
+    #[serde(skip)]
+    pub stdout_bytes: Vec<u8>,
+    #[serde(skip)]
+    pub stderr_bytes: Vec<u8>,
 }
 impl Output {
     pub fn success(&self) -> bool {
@@ -309,6 +315,8 @@ impl Runner<'_> {
             stdout: String::from_utf8_lossy(&out).into_owned(),
             stderr: String::from_utf8_lossy(&err).into_owned(),
             elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+            stdout_bytes: out,
+            stderr_bytes: err,
         })
     }
 }
