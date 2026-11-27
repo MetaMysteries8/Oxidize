@@ -86,7 +86,11 @@ fn a_port_that_behaves_the_same_agrees_and_is_timed() {
     // Floats may differ in the last digit after a JSON round trip; the evidence must not.
     assert_eq!(saved.schema, "oxidize/crosscheck@1");
     assert!(saved.agree);
-    assert_eq!(saved.commands[0].original, result.commands[0].original);
+    // Raw output bytes stay in memory; the evidence keeps their SHA-256.
+    let (kept, ran) = (&saved.commands[0].original, &result.commands[0].original);
+    assert_eq!(kept.stdout_sha256, ran.stdout_sha256);
+    assert_eq!(kept.stdout_sha256, oxidize_core::digest(&ran.stdout_bytes));
+    assert_eq!(kept.files, ran.files);
     assert_eq!(
         saved.commands[0].timing.as_ref().unwrap().rounds,
         timing.rounds
@@ -213,4 +217,54 @@ fn nothing_to_run_is_an_error() {
         error.to_string().contains("nothing to crosscheck"),
         "{error}"
     );
+}
+
+#[test]
+fn credentials_inside_included_paths_are_never_copied() {
+    let dir = project(
+        "import os\nprint(sorted(os.listdir('node_modules/pkg')), os.path.exists('node_modules/.env'))\n",
+    );
+    let pkg = dir.path().join("node_modules/pkg");
+    fs::create_dir_all(pkg.join(".git")).unwrap();
+    for name in ["index.js", "private.key", "cert.pem", ".env.local"] {
+        fs::write(pkg.join(name), "x").unwrap();
+    }
+    fs::write(dir.path().join("node_modules/.env"), "SECRET=1").unwrap();
+    let mut config = config(&["app.py"]);
+    config.crosscheck.include = vec!["node_modules".into()];
+    config.crosscheck.timing = false;
+    let result = run(dir.path(), &config);
+    assert_eq!(
+        result.commands[0].original.stdout.trim(),
+        "['index.js'] False",
+        "{:?}",
+        result.commands[0].original.stderr
+    );
+    assert_eq!(
+        result.skipped_credentials,
+        [
+            "node_modules/.env",
+            "node_modules/pkg/.env.local",
+            "node_modules/pkg/.git",
+            "node_modules/pkg/cert.pem",
+            "node_modules/pkg/private.key",
+        ]
+    );
+    assert!(crosscheck::markdown(&result).contains("never copied"));
+}
+
+#[test]
+fn every_timed_invocation_starts_from_a_fresh_copy() {
+    // Exclusive creation fails if anything ran before in the same copy.
+    let dir = project("open('out.txt', 'x').write('once')\nprint('ok')\n");
+    let mut config = config(&["app.py"]);
+    config.performance.warmup = 1;
+    let result = run(dir.path(), &config);
+    assert!(result.agree, "{result:#?}");
+    let timing = result.commands[0].timing.as_ref().expect("timed");
+    for round in &timing.rounds {
+        // Warm-ups are not samples: 3 timed invocations per side per round.
+        assert_eq!(round.original.wall_ns.len(), 3);
+        assert_eq!(round.candidate.wall_ns.len(), 3);
+    }
 }

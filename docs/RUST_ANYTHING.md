@@ -34,12 +34,15 @@ needing to understand the port's language:
 2. It runs each of your application commands once with `RUST_ANYTHING_MODE=old` and once with
    `RUST_ANYTHING_MODE=new`, inside the sandbox (Bubblewrap, Podman or Docker) unless you pass
    `--trust-code`.
-3. It compares the exit code, stdout, stderr and any files you list (presence, length and
-   SHA-256), and names every difference with where it starts.
+3. It compares the exit code, the exact bytes of stdout and stderr (so invalid UTF-8 can't hide
+   a difference), and any files you list (presence, length and SHA-256, streamed so a huge file
+   can't exhaust memory). It names every difference with where it starts.
 4. Only commands that behave the same, and exit 0, are timed. They run in interleaved rounds
    (alternating which side goes first) under `[performance]`'s noise policy, with wall time,
-   and CPU time and peak RSS where the platform reports them. Too-noisy timings are reported as
-   "no claim".
+   and CPU time and peak RSS where the platform reports them. Every invocation, warm-ups
+   included, starts from its own fresh copy, the same starting state as the behaviour runs. A
+   round costs `warmup + iterations` copies per side, so large `include` paths make timing
+   slower. Too-noisy timings are reported as "no claim".
 5. It writes `.oxidize/crosscheck.json` and `.oxidize/crosscheck.md`, and exits 2 when the two
    runs differ, so CI or a coding agent can gate on it. The project itself is never modified.
 
@@ -94,7 +97,9 @@ speed claim only for what agrees. Both use the original program as the source of
   that depends on timing.
 - Snapshots skip `node_modules`, virtual environments and build folders. List what the commands
   need in `include`. Symlinks inside included paths are not copied and are listed in the report,
-  so pnpm-style symlinked `node_modules` need a real install inside the project.
+  so pnpm-style symlinked `node_modules` need a real install inside the project. Credential-like
+  or reserved names inside them (`.env*`, `*.key`, `*.pem`, `.ssh`, `.aws`, `.git`, ...) are never
+  copied either, the same rule snapshots use, and the report lists what was skipped.
 - Inside Bubblewrap the commands see only the copy and the system toolchain paths. Runtimes
   installed elsewhere (for example under your home folder) need `execution.read_only_paths` and
   `--allow-host-paths`.

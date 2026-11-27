@@ -16,9 +16,9 @@ use crate::sampling::{self, Side};
 use crate::workloads::{self, WorkloadResult, WorkloadRound, WorkloadSide};
 use anyhow::{Context, Result, ensure};
 use oxidize_core::{
-    Config, CrosscheckConfig, digest, files,
+    Config, CrosscheckConfig, digest, digest_file, files,
     process::{Output, Runner},
-    snapshot,
+    reserved_or_credential_name, snapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -57,10 +57,18 @@ impl FileState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Observation {
     pub code: Option<i32>,
+    /// Decoded for reading; invalid UTF-8 shows as U+FFFD. Comparisons use the exact bytes.
     pub stdout: String,
     pub stderr: String,
+    /// SHA-256 of the exact stdout and stderr bytes.
+    pub stdout_sha256: String,
+    pub stderr_sha256: String,
     pub files: Vec<FileState>,
     pub elapsed_ms: f64,
+    #[serde(skip)]
+    pub stdout_bytes: Vec<u8>,
+    #[serde(skip)]
+    pub stderr_bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -105,6 +113,9 @@ pub struct Crosscheck {
     pub native_modules: Vec<String>,
     /// Symlinks inside `include` paths, which copies do not carry.
     pub skipped_symlinks: Vec<String>,
+    /// Credential-like or reserved names inside `include` paths (`.env*`, `*.key`, `*.pem`,
+    /// `.ssh`, `.git`, ...), which copies never carry.
+    pub skipped_credentials: Vec<String>,
     pub commands: Vec<CommandResult>,
     /// Every command agreed.
     pub agree: bool,
@@ -120,19 +131,19 @@ pub fn compare(original: &Observation, candidate: &Observation, policy: &Policy)
             code_text(candidate.code)
         ));
     }
-    let streams: &[(&str, &String, &String)] = if policy.compare_stderr {
+    let streams: &[(&str, &[u8], &[u8])] = if policy.compare_stderr {
         &[
-            ("stdout", &original.stdout, &candidate.stdout),
-            ("stderr", &original.stderr, &candidate.stderr),
+            ("stdout", &original.stdout_bytes, &candidate.stdout_bytes),
+            ("stderr", &original.stderr_bytes, &candidate.stderr_bytes),
         ]
     } else {
-        &[("stdout", &original.stdout, &candidate.stdout)]
+        &[("stdout", &original.stdout_bytes, &candidate.stdout_bytes)]
     };
     for (name, a, b) in streams {
         let (a, b) = if policy.normalize_line_endings {
-            (a.replace("\r\n", "\n"), b.replace("\r\n", "\n"))
+            (crlf_to_lf(a), crlf_to_lf(b))
         } else {
-            (a.to_string(), b.to_string())
+            (a.to_vec(), b.to_vec())
         };
         if let Some(at) = first_difference(&a, &b) {
             differences.push(format!(
@@ -159,29 +170,45 @@ fn code_text(code: Option<i32>) -> String {
     code.map_or_else(|| "none (killed or timed out)".into(), |c| c.to_string())
 }
 
-fn first_difference(a: &str, b: &str) -> Option<usize> {
+fn crlf_to_lf(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, &b) in bytes.iter().enumerate() {
+        if !(b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(b);
+        }
+    }
+    out
+}
+
+fn first_difference(a: &[u8], b: &[u8]) -> Option<usize> {
     if a == b {
         return None;
     }
     Some(
-        a.bytes()
-            .zip(b.bytes())
+        a.iter()
+            .zip(b)
             .position(|(x, y)| x != y)
             .unwrap_or(a.len().min(b.len())),
     )
 }
 
-/// Up to 60 bytes of `text` from `at`, on character boundaries.
-fn excerpt(text: &str, at: usize) -> String {
-    let mut start = at.min(text.len());
-    while !text.is_char_boundary(start) {
-        start -= 1;
+/// Up to 60 bytes from `at`, not starting or ending inside a UTF-8 sequence; invalid UTF-8
+/// shows as U+FFFD.
+fn excerpt(bytes: &[u8], at: usize) -> String {
+    let continuation = |i: usize| bytes.get(i).is_some_and(|b| b & 0xC0 == 0x80);
+    let mut start = at.min(bytes.len());
+    for _ in 0..3 {
+        if start > 0 && continuation(start) {
+            start -= 1;
+        }
     }
-    let mut end = (start + 60).min(text.len());
-    while !text.is_char_boundary(end) {
-        end -= 1;
+    let mut end = (start + 60).min(bytes.len());
+    for _ in 0..3 {
+        if end > start && continuation(end) {
+            end -= 1;
+        }
     }
-    text[start..end].to_string()
+    String::from_utf8_lossy(&bytes[start..end]).into_owned()
 }
 
 /// What a disposable copy carried beyond the normal snapshot.
@@ -190,6 +217,7 @@ struct CopyNotes {
     ports: Vec<String>,
     native_modules: Vec<String>,
     skipped_symlinks: Vec<String>,
+    skipped_credentials: Vec<String>,
 }
 
 fn slash(path: &Path) -> String {
@@ -243,7 +271,7 @@ fn prepare_copy(root: &Path, destination: &Path, include: &[String]) -> Result<C
             &destination.join(&relative),
             &relative,
             &metadata,
-            &mut notes.skipped_symlinks,
+            &mut notes,
             &mut count,
             &mut bytes,
         )?;
@@ -251,6 +279,7 @@ fn prepare_copy(root: &Path, destination: &Path, include: &[String]) -> Result<C
     notes.ports.sort();
     notes.native_modules.sort();
     notes.skipped_symlinks.sort();
+    notes.skipped_credentials.sort();
     Ok(notes)
 }
 
@@ -259,24 +288,29 @@ fn copy_tree(
     target: &Path,
     relative: &Path,
     metadata: &fs::Metadata,
-    skipped: &mut Vec<String>,
+    notes: &mut CopyNotes,
     count: &mut usize,
     bytes: &mut u64,
 ) -> Result<()> {
     let file_type = metadata.file_type();
     if file_type.is_symlink() {
-        skipped.push(slash(relative));
+        notes.skipped_symlinks.push(slash(relative));
     } else if file_type.is_dir() {
         fs::create_dir_all(target)?;
         for entry in fs::read_dir(source)? {
             let entry = entry?;
             let name = entry.file_name();
+            // The same exclusions as snapshots, for everything inside an included path too.
+            if reserved_or_credential_name(&name.to_string_lossy()) {
+                notes.skipped_credentials.push(slash(&relative.join(&name)));
+                continue;
+            }
             copy_tree(
                 &entry.path(),
                 &target.join(&name),
                 &relative.join(&name),
                 &fs::symlink_metadata(entry.path())?,
-                skipped,
+                notes,
                 count,
                 bytes,
             )?;
@@ -309,12 +343,13 @@ fn file_states(project: &Path, paths: &[String]) -> Result<Vec<FileState>> {
                 Err(_) => state("missing"),
                 Ok(m) if !m.file_type().is_file() => state("not a regular file"),
                 Ok(_) => {
-                    let content = fs::read(&full)?;
+                    // Streamed: a command can write a huge (even sparse) file cheaply.
+                    let (length, sha256) = digest_file(&full)?;
                     FileState {
                         path: path.clone(),
                         kind: "file".into(),
-                        length: Some(content.len() as u64),
-                        sha256: Some(digest(&content)),
+                        length: Some(length),
+                        sha256: Some(sha256),
                     }
                 }
             })
@@ -368,11 +403,44 @@ impl Checker<'_> {
             code: output.code,
             stdout: output.stdout,
             stderr: output.stderr,
+            stdout_sha256: digest(&output.stdout_bytes),
+            stderr_sha256: digest(&output.stderr_bytes),
             files: file_states(&project, &self.settings.file_paths)?,
             elapsed_ms: output.elapsed_ms,
+            stdout_bytes: output.stdout_bytes,
+            stderr_bytes: output.stderr_bytes,
         })
     }
-    /// Interleaved rounds, each side in a fresh copy every time, like `oxidize workloads`.
+    /// One invocation of `command`, timed by the workload wrapper in a fresh copy.
+    fn time_once(
+        &self,
+        name: &str,
+        command: &[String],
+        side: Side,
+        notes: &mut Option<CopyNotes>,
+    ) -> Result<WorkloadSide> {
+        let argv = vec![
+            self.config.python.clone(),
+            "-I".into(),
+            "-c".into(),
+            workloads::WRAPPER.into(),
+            serde_json::to_string(command)?,
+            "0".into(),
+            "1".into(),
+            self.config.execution.output_limit_bytes.to_string(),
+        ];
+        let project = self.fresh(notes)?;
+        let output = self.run(&project, &argv, side)?;
+        output.require_success(&format!(
+            "timing `{name}` with {}={}",
+            self.settings.switch,
+            self.value(side)
+        ))?;
+        serde_json::from_str(&output.stdout).context("decode crosscheck timing")
+    }
+    /// Interleaved rounds. Every invocation, warm-ups included, starts from a fresh copy, the
+    /// same starting state the behaviour runs had: a command that writes into its project
+    /// (an output file opened exclusively, a cache) is never timed against its own leftovers.
     fn time(
         &self,
         name: &str,
@@ -380,33 +448,39 @@ impl Checker<'_> {
         notes: &mut Option<CopyNotes>,
     ) -> Result<WorkloadResult> {
         let performance = &self.config.performance;
-        let argv = vec![
-            self.config.python.clone(),
-            "-I".into(),
-            "-c".into(),
-            workloads::WRAPPER.into(),
-            serde_json::to_string(command)?,
-            performance.warmup.to_string(),
-            performance.iterations.to_string(),
-            self.config.execution.output_limit_bytes.to_string(),
-        ];
         let mut rounds = vec![];
         for round in 0..performance.rounds {
             let order = sampling::order(round);
             let (mut o, mut c) = (None, None);
             for side in order {
-                let project = self.fresh(notes)?;
-                let output = self.run(&project, &argv, side)?;
-                output.require_success(&format!(
-                    "timing `{name}` with {}={}",
-                    self.settings.switch,
-                    self.value(side)
-                ))?;
-                let measured: WorkloadSide =
-                    serde_json::from_str(&output.stdout).context("decode crosscheck timing")?;
+                let mut combined = WorkloadSide {
+                    wall_ns: vec![],
+                    cpu_ns: Some(vec![]),
+                    peak_rss_kib: Some(0),
+                    unsupported: vec![],
+                };
+                for invocation in 0..performance.warmup + performance.iterations {
+                    let one = self.time_once(name, command, side, notes)?;
+                    // Peak RSS covers warm-ups too, as in `oxidize workloads`.
+                    combined.peak_rss_kib = combined
+                        .peak_rss_kib
+                        .zip(one.peak_rss_kib)
+                        .map(|(a, b)| a.max(b));
+                    combined.unsupported.extend(one.unsupported);
+                    if invocation < performance.warmup {
+                        continue;
+                    }
+                    combined.wall_ns.extend(one.wall_ns);
+                    combined.cpu_ns = combined.cpu_ns.zip(one.cpu_ns).map(|(mut a, b)| {
+                        a.extend(b);
+                        a
+                    });
+                }
+                combined.unsupported.sort();
+                combined.unsupported.dedup();
                 match side {
-                    Side::Original => o = Some(measured),
-                    Side::Candidate => c = Some(measured),
+                    Side::Original => o = Some(combined),
+                    Side::Candidate => c = Some(combined),
                 }
             }
             rounds.push(WorkloadRound {
@@ -524,6 +598,7 @@ pub fn run(root: &Path, config: &Config, trust: bool) -> Result<Crosscheck> {
         ports: notes.ports,
         native_modules: notes.native_modules,
         skipped_symlinks: notes.skipped_symlinks,
+        skipped_credentials: notes.skipped_credentials,
         agree: commands.iter().all(|c| c.differences.is_empty()),
         commands,
     };
@@ -601,6 +676,14 @@ pub fn markdown(c: &Crosscheck) -> String {
             }
         );
     }
+    if !c.skipped_credentials.is_empty() {
+        text += &format!(
+            "Credential-like or reserved paths inside `include` paths, never copied: {}.
+
+",
+            c.skipped_credentials.join(", ")
+        );
+    }
     if !c.skipped_symlinks.is_empty() {
         text += &format!(
             "Symlinks skipped while copying `include` paths: {}.\n\n",
@@ -655,12 +738,19 @@ mod tests {
     use super::*;
 
     fn observation(code: i32, stdout: &str) -> Observation {
+        raw(code, stdout.as_bytes(), b"")
+    }
+    fn raw(code: i32, stdout: &[u8], stderr: &[u8]) -> Observation {
         Observation {
             code: Some(code),
-            stdout: stdout.into(),
-            stderr: String::new(),
+            stdout: String::from_utf8_lossy(stdout).into_owned(),
+            stderr: String::from_utf8_lossy(stderr).into_owned(),
+            stdout_sha256: digest(stdout),
+            stderr_sha256: digest(stderr),
             files: vec![],
             elapsed_ms: 1.0,
+            stdout_bytes: stdout.to_vec(),
+            stderr_bytes: stderr.to_vec(),
         }
     }
     fn policy() -> Policy {
@@ -698,16 +788,27 @@ mod tests {
 
     #[test]
     fn line_endings_and_stderr_follow_the_policy() {
-        let mut a = observation(0, "a\r\nb\r\n");
-        let mut b = observation(0, "a\nb\n");
-        a.stderr = "warning\n".into();
+        let a = raw(0, b"a\r\nb\r\n", b"warning\n");
+        let b = observation(0, "a\nb\n");
         assert_eq!(compare(&a, &b, &policy()).len(), 2);
         let mut loose = policy();
         loose.normalize_line_endings = true;
         loose.compare_stderr = false;
         assert!(compare(&a, &b, &loose).is_empty());
-        b.stdout = "a\nc\n".into();
+        let b = observation(0, "a\nc\n");
         assert_eq!(compare(&a, &b, &loose).len(), 1, "content still counts");
+        // A lone CR is content, not a line ending.
+        assert_eq!(crlf_to_lf(b"a\rb\r\n"), b"a\rb\n");
+    }
+
+    #[test]
+    fn invalid_utf8_that_decodes_the_same_still_differs() {
+        let (a, b) = (raw(0, b"x\xff", b""), raw(0, b"x\xfe", b""));
+        assert_eq!(a.stdout, b.stdout, "both decode to U+FFFD");
+        let differences = compare(&a, &b, &policy());
+        assert_eq!(differences.len(), 1, "{differences:?}");
+        assert!(differences[0].contains("stdout differs from byte 1"));
+        assert_ne!(a.stdout_sha256, b.stdout_sha256);
     }
 
     #[test]
@@ -727,9 +828,10 @@ mod tests {
 
     #[test]
     fn excerpts_stay_on_character_boundaries() {
-        assert_eq!(excerpt("ab😀cd", 3), "😀cd");
-        assert_eq!(first_difference("abc", "abcd"), Some(3));
-        assert_eq!(first_difference("same", "same"), None);
+        assert_eq!(excerpt("ab😀cd".as_bytes(), 3), "😀cd");
+        assert_eq!(excerpt(&"é".repeat(40).into_bytes(), 1), "é".repeat(30));
+        assert_eq!(first_difference(b"abc", b"abcd"), Some(3));
+        assert_eq!(first_difference(b"same", b"same"), None);
     }
 
     #[test]

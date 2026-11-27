@@ -255,17 +255,21 @@ const RESERVED_VARIABLES: &[&str] = &[
     "CONTAINER_HOST",
 ];
 
+/// Whether one file or folder name is version control, Oxidize state or credential-like. These are
+/// never snapshotted, observed or copied into a workspace.
+pub fn reserved_or_credential_name(name: &str) -> bool {
+    matches!(
+        name,
+        ".git" | ".oxidize" | ".ssh" | ".aws" | ".cargo" | ".rustup"
+    ) || name.starts_with(".env")
+        || name.ends_with(".pem")
+        || name.ends_with(".key")
+}
+
 /// Whether any component of `path` names version control, Oxidize state or credentials.
 fn credential_like(path: &Path) -> bool {
-    path.components().any(|part| {
-        let name = part.as_os_str().to_string_lossy();
-        matches!(
-            name.as_ref(),
-            ".git" | ".oxidize" | ".ssh" | ".aws" | ".cargo" | ".rustup"
-        ) || name.starts_with(".env")
-            || name.ends_with(".pem")
-            || name.ends_with(".key")
-    })
+    path.components()
+        .any(|part| reserved_or_credential_name(&part.as_os_str().to_string_lossy()))
 }
 
 /// Workload and crosscheck command names: 1..64 characters, unique, with non-empty commands.
@@ -547,6 +551,24 @@ pub fn fingerprint(root: &Path) -> Result<String> {
 }
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+/// The length and SHA-256 of a file, read in bounded chunks so a huge file can't exhaust memory.
+pub fn digest_file(path: &Path) -> Result<(u64, String)> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0; 64 * 1024];
+    let mut length = 0u64;
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+        length += n as u64;
+    }
+    Ok((length, format!("{:x}", hasher.finalize())))
 }
 
 pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {

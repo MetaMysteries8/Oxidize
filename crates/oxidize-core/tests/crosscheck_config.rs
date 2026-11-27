@@ -74,3 +74,33 @@ fn unsafe_or_meaningless_settings_are_rejected() {
     );
     assert!(check(&|c| c.crosscheck.include = vec![".venv".into()]).is_ok());
 }
+
+#[test]
+fn files_are_hashed_in_chunks_with_the_same_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.bin");
+    let bytes: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+    std::fs::write(&path, &bytes).unwrap();
+    assert_eq!(
+        oxidize_core::digest_file(&path).unwrap(),
+        (bytes.len() as u64, oxidize_core::digest(&bytes))
+    );
+}
+
+#[test]
+fn credential_names_are_recognized() {
+    for name in [
+        ".env",
+        ".env.local",
+        "id.key",
+        "cert.pem",
+        ".ssh",
+        ".git",
+        ".aws",
+    ] {
+        assert!(oxidize_core::reserved_or_credential_name(name), "{name}");
+    }
+    for name in ["index.js", "environment.py", "keys", "node_modules"] {
+        assert!(!oxidize_core::reserved_or_credential_name(name), "{name}");
+    }
+}
