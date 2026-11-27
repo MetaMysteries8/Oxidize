@@ -16,6 +16,7 @@ use std::{
 };
 
 mod comparison;
+pub mod crosscheck;
 mod faults;
 mod history;
 pub mod sampling;
