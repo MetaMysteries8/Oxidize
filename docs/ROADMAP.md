@@ -53,13 +53,14 @@ with different strengths (see [Oxidize and rust-anything](RUST_ANYTHING.md)). Th
 delivered: `oxidize crosscheck` runs an app with `RUST_ANYTHING_MODE=old` and `new` in sandboxed
 disposable copies, compares what it does and times only what agrees.
 
-rust-anything is the "I trust my agent" layer (fast, eleven languages, its own checks decide
-when a port is done); Oxidize is the "I want safety" layer (sandboxed unless you permit
-otherwise, reversible, speed claimed only when timing shows it).
+rust-anything is the porting layer (fast, many languages, checks each port against the original
+with recorded cases, shadow mode and its gate); Oxidize is the second-opinion layer (an
+independent whole-app check, sandboxed unless you permit otherwise, reversible, speed claimed
+only when timing shows it).
 
 **Planned: Meld**, a sublayer that is part of Oxidize and ships with it, moving you between the
-two layers without glue scripts: let the agent run freely, then pass a port through Oxidize
-before relying on it. Not started. The intended flow, per unit:
+two layers without glue scripts: let rust-anything port and check, then have Oxidize confirm
+the result before you rely on it. Not started. The intended flow, per unit:
 
 ```text
 rust-anything plan, bridge, record
